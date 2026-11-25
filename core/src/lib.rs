@@ -199,6 +199,12 @@ pub fn decide(risk: u8) -> Action {
 ///
 /// 这里刻意不内嵌完整 tz 数据库：只用常见的几组时区名做前缀匹配，未知时区返回 `None`
 /// （宁可不加风险，也不误伤）。
+/// 公开给服务端复用：时区与 IP 国家的大致偏移差（小时）。
+/// 返回 None 表示无法判断（未知时区/国家）——调用方应"不加分"，而不是猜。
+pub fn tz_geo_mismatch_hours(tz: &str, country: &str) -> Option<u32> {
+    tz_offset_diff_hours(tz, country)
+}
+
 fn tz_offset_diff_hours(tz: &str, country: &str) -> Option<u32> {
     let tz_off = tz_utc_offset(tz)?;
     let geo_off = country_utc_offset(country)?;
