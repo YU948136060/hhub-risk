@@ -25,6 +25,7 @@ ROUTES = {
     "/index.html": "index.html",
     "/design.html": "docs/design.html",
     "/quickstart.html": "docs/quickstart.html",
+    "/docs/": "docs/design.html",
 }
 
 
@@ -51,13 +52,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         rel = ROUTES.get(path)
+        if rel is None and path.startswith("/docs/") and path.endswith(".html"):
+            rel = path.lstrip("/")          # docs/design.html 之类直接映射
         if rel is None and path.startswith("/static/"):
+            rel = path.lstrip("/")
+        if rel is None and os.path.splitext(path)[1] in (".css", ".js", ".svg", ".png", ".ico", ".txt"):
             rel = path.lstrip("/")
         if rel is None:
             self._send(404, b"not found", "text/plain; charset=utf-8")
             return
-        full = os.path.normpath(os.path.join(self.root, rel))
-        if not full.startswith(os.path.abspath(self.root)):
+        root_abs = os.path.abspath(self.root)
+        full = os.path.normpath(os.path.join(root_abs, rel))
+        if not (full == root_abs or full.startswith(root_abs + os.sep)):
             self._send(403, b"forbidden", "text/plain; charset=utf-8")
             return
         try:
@@ -86,7 +92,7 @@ def main() -> None:
     ap.add_argument("--key", required=True)
     a = ap.parse_args()
 
-    Handler.root = a.root
+    Handler.root = os.path.abspath(a.root)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(certfile=a.cert, keyfile=a.key)
