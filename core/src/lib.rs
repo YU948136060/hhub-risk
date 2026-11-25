@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! hhub-risk-core —— 通用风控层（AGPL-3.0）。
 //!
 //! 设计边界（很重要）：

@@ -1,7 +1,10 @@
 # hhub-risk
 
 > Self-hosted risk layer for social platforms: browser attestation + behaviour scoring +
-> IP/geo consistency, with a pluggable captcha. **AGPL-3.0.**
+> IP/geo consistency, with a pluggable captcha.
+>
+> **许可证是分开的**：后端（`core/`、未来的 `server/`）**AGPL-3.0**；
+> 前端与 SDK（`web/`、`sdk/*`）**Apache-2.0**。详见 [LICENSE 说明](#许可证)。
 
 ## 为什么
 
@@ -33,6 +36,20 @@ risk/
 
 后续：`server/`（参考 HTTP 服务）、`web/`（零依赖原生 JS + React/Vue/Svelte 薄壳）、
 `sdk/{go,python,node,java,php}`。
+
+## 许可证
+
+| 部分 | 许可证 | 为什么 |
+|---|---|---|
+| `core/`（Rust 库）、未来的 `server/` | **AGPL-3.0** | 服务端是整个风控的判定核心；AGPL 保证"改了就要回馈"，同时允许商业闭源部署（只要不改服务端） |
+| `web/`（原生 JS / 框架薄壳）、`sdk/*`（Go/Python/Node/Java/PHP） | **Apache-2.0** | SDK 是**独立进程的 HTTP 客户端**，不链接 AGPL 代码，不能被"传染"；Apache 2.0 带专利授权，企业最放心 |
+
+**兼容性**：Apache-2.0 与 GPLv3/AGPLv3 兼容（FSF 认可），所以 Apache 的 SDK 可以被 AGPL 的服务端一并分发；
+反过来不成立——**不能**把 AGPL 代码放进 Apache 组件里再以 Apache 发布。
+实际边界：SDK 只通过 `HTTP + HMAC token` 与服务端通信，属于"独立作品"，不构成衍生。
+
+每个源文件头部都有 SPDX 标识：
+`// SPDX-License-Identifier: AGPL-3.0-only`（后端）或 `// SPDX-License-Identifier: Apache-2.0`（SDK/前端）。
 
 ## 边界
 
