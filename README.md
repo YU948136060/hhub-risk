@@ -34,8 +34,8 @@ risk/
   LICENSE        AGPL-3.0
 ```
 
-后续：`server/`（参考 HTTP 服务）、`web/`（零依赖原生 JS + React/Vue/Svelte 薄壳）、
-`sdk/{go,python,node,java,php}`。
+已有：`sdk/{go,python,node,java,php}`（全部 Apache-2.0，同一套跨语言测试向量）。
+后续：`server/`（参考 HTTP 服务）、`web/`（零依赖原生 JS + React/Vue/Svelte 薄壳）。
 
 ## 许可证
 

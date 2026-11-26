@@ -1,0 +1,12 @@
+{
+  "name": "hhub-risk/hhub-risk",
+  "description": "hhub-risk 风控层 PHP SDK（本地验签，零依赖）",
+  "type": "library",
+  "license": "Apache-2.0",
+  "require": {
+    "php": ">=8.0"
+  },
+  "autoload": {
+    "psr-4": { "HHubRisk\\": "src/" }
+  }
+}
