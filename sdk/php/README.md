@@ -35,4 +35,10 @@ php sdk/php/tests/test.php     # PASS=12
 ```
 
 测试向量与 Rust core / Go / Python / Node / Java 共用。
-（注：本机开发环境没有 PHP，PHP 侧测试脚本尚未在本机执行过——请在 CI 或本地跑一次。）
+
+本机实测（PHP 8.5.4）：
+
+```
+$ php -l sdk/php/src/HhubRisk.php        # No syntax errors
+$ php sdk/php/tests/test.php             # PASS=12
+```
