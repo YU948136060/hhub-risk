@@ -13,8 +13,9 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8090"
-SECRET = "test-secret"
+import os
+BASE = os.environ.get("RISK_BASE", "http://127.0.0.1:8090")
+SECRET = os.environ.get("RISK_SECRET", "test-secret")
 FP = {
     "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
     "canvas": "a" * 64,

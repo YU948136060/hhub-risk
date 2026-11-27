@@ -37,10 +37,25 @@ await HHubRisk.score({ pointer: 12, keys: 0, corrections: 1, dwell_ms: 4000,
 
 ## 测试
 
+单测（纯逻辑）：
+
 ```bash
 node --test web/test/
 # 3 passed：SHA-256 与 node:crypto 一致、PoW 材料量化一致、无 DOM 环境降级不抛错
 ```
+
+**真浏览器端到端**（需要参考服务器在跑）：
+
+```bash
+RISK_SERVER=http://127.0.0.1:8091 RISK_SECRET=test-secret \
+  node web/test/browser-smoke.mjs
+# 浏览器拿到 token；risk=65 PoW=10299次/204ms
+# Python SDK 验签通过
+# PASS
+```
+
+脚本会起一个同源 fixture（页面 + SDK + `/v1/*` 代理），用 headless Chrome 真跑一遍
+canvas/WebGL/rAF → PoW → attest，最后用 **Python SDK** 验签 token。
 
 ## 边界
 

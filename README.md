@@ -25,7 +25,8 @@
 | L3 网络地理 | IP → 国家/省/市；时区/语言一致性 | ✅ 已在 HHub 生产使用 |
 | L4 长期画像 | 指纹/IP 日表、长期矛盾规则 | ✅ 已在 HHub 生产使用（规则本身不开源） |
 | L5 账号/会话 | 新设备/无痕/主设备 | ✅ 无痕闸门（方案 B：邮箱 step-up）已在 HHub 生产使用 |
-| 协议 | `/v1/challenge` `/v1/attest` `/v1/score` `/v1/verify` | ✅ 参考 server + OpenAPI |
+| 协议 | `/v1/challenge` `/v1/attest` `/v1/score` `/v1/verify` | ✅ 参考 server + OpenAPI（支持 Redis 共享挑战 + 按 IP 限流） |
+| 前端 | 零依赖 `hhub-risk.js` + React/Vue/WebComponent | ✅ 真浏览器端到端冒烟通过 |
 
 ## 仓库结构
 

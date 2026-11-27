@@ -15,27 +15,22 @@
 //! * 挑战存储（这里内存 + Mutex，多实例会失效 → 用 Redis）；
 //! * IP 地理（这里只接受调用方传入的 `geo_country`）；
 //! * TLS（这里明文 HTTP，前面必须挂反代）。
-use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 const DIFFICULTY: u8 = 3;
-const CHALLENGE_TTL: Duration = Duration::from_secs(120);
 const TOKEN_TTL_SECS: i64 = 1800;
 
-struct Challenge {
-    challenge: String,
-    mix: String,
-    created: Instant,
-    used: bool,
-}
+mod redis_min;
+mod store;
 
-type Store = Arc<Mutex<HashMap<String, Challenge>>>;
+use store::Store;
+type SharedStore = Arc<Store>;
 
 fn random_hex(n: usize) -> String {
     use rand_like::Rng;
@@ -118,7 +113,7 @@ fn fp_hash(fp: &Value) -> String {
     d[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn http(mut s: TcpStream, store: Store, secret: Vec<u8>) {
+fn http(mut s: TcpStream, peer: SocketAddr, store: SharedStore, secret: Vec<u8>) {
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
@@ -157,7 +152,7 @@ fn http(mut s: TcpStream, store: Store, secret: Vec<u8>) {
     }
     let body = String::from_utf8_lossy(&buf[body_start..(body_start + content_len).min(buf.len())]).to_string();
 
-    let (status, payload) = route(method, path, &body, &store, &secret);
+    let (status, payload) = route(method, path, &body, &peer, &store, &secret);
     let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
     let resp = format!(
         "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{text}",
@@ -170,8 +165,22 @@ fn find_headers_end(b: &[u8]) -> Option<usize> {
     b.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
-fn route(method: &str, path: &str, body: &str, store: &Store, secret: &[u8]) -> (&'static str, Value) {
+fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &SharedStore, secret: &[u8]) -> (&'static str, Value) {
     let (path_only, query) = path.split_once('?').unwrap_or((path, ""));
+    // 固定窗口限流：每分钟按 IP 计数（挑战 30、attest 20）
+    let minute = now_secs() / 60;
+    let ip = peer.ip().to_string();
+    let (limit_path, limit) = match (method, path_only) {
+        ("POST", "/v1/challenge") => ("challenge", 30i64),
+        ("POST", "/v1/attest") => ("attest", 20i64),
+        _ => ("", 0),
+    };
+    if limit > 0 {
+        let key = format!("risk:rl:{limit_path}:{ip}:{minute}");
+        if store.incr_rate(&key) > limit {
+            return ("429 Too Many Requests", json!({"error": "请求过于频繁，请稍后再试"}));
+        }
+    }
     match (method, path_only) {
         ("GET", "/healthz") => ("200 OK", json!({"ok": true})),
         ("POST", "/v1/challenge") => ("200 OK", issue_challenge(store)),
@@ -192,17 +201,15 @@ fn parse_json(s: &str) -> Option<Value> {
     serde_json::from_str(s).ok()
 }
 
-fn issue_challenge(store: &Store) -> Value {
+fn issue_challenge(store: &SharedStore) -> Value {
     let id = random_hex(16);
     let challenge = random_hex(16);
     let mix = random_hex(16);
-    let mut m = store.lock().unwrap_or_else(|e| e.into_inner());
-    m.retain(|_, c| c.created.elapsed() < CHALLENGE_TTL && !c.used);
-    m.insert(id.clone(), Challenge { challenge: challenge.clone(), mix: mix.clone(), created: Instant::now(), used: false });
+    store.issue(&id, &challenge, &mix);
     json!({"challenge_id": id, "challenge": challenge, "mix": mix, "difficulty": DIFFICULTY})
 }
 
-fn attest(store: &Store, secret: &[u8], body: &Value) -> (&'static str, Value) {
+fn attest(store: &SharedStore, secret: &[u8], body: &Value) -> (&'static str, Value) {
     let s = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
     let id = s("challenge_id");
     let nonce = s("nonce");
@@ -210,17 +217,7 @@ fn attest(store: &Store, secret: &[u8], body: &Value) -> (&'static str, Value) {
     if id.is_empty() || nonce.is_empty() || !fp.is_object() {
         return ("400 Bad Request", json!({"error": "缺少 challenge_id/nonce/fp"}));
     }
-    let ch = {
-        let mut m = store.lock().unwrap_or_else(|e| e.into_inner());
-        match m.get_mut(&id) {
-            Some(c) if !c.used && c.created.elapsed() < CHALLENGE_TTL => {
-                c.used = true;
-                Some((c.challenge.clone(), c.mix.clone()))
-            }
-            _ => None,
-        }
-    };
-    let Some((challenge, mix)) = ch else {
+    let Some((challenge, mix)) = store.consume(&id) else {
         return ("400 Bad Request", json!({"error": "挑战已过期或已使用"}));
     };
 
@@ -304,7 +301,7 @@ fn main() {
         eprintln!("⚠️  RISK_SECRET 未设置，使用 dev-secret（生产必须改）");
         "dev-secret".into()
     });
-    let store: Store = Arc::new(Mutex::new(HashMap::new()));
+    let store: SharedStore = Arc::new(Store::from_env());
     let listener = match TcpListener::bind(&listen) {
         Ok(l) => l,
         Err(e) => {
@@ -316,9 +313,13 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
+                let peer = match s.peer_addr() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
                 let store = Arc::clone(&store);
                 let secret = secret.clone().into_bytes();
-                std::thread::spawn(move || http(s, store, secret));
+                std::thread::spawn(move || http(s, peer, store, secret));
             }
             Err(e) => eprintln!("accept: {e}"),
         }

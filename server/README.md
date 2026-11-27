@@ -10,6 +10,20 @@ RISK_SECRET=change-me cargo run -p hhub-risk-server
 # hhub-risk reference server on http://127.0.0.1:8090
 ```
 
+多实例（挑战必须共享，否则 A 发的挑战 B 不认）：
+
+```bash
+RISK_REDIS=redis://127.0.0.1:6379/0 RISK_SECRET=change-me RISK_LISTEN=127.0.0.1:8091 \
+  cargo run -p hhub-risk-server &
+RISK_REDIS=redis://127.0.0.1:6379/0 RISK_SECRET=change-me RISK_LISTEN=127.0.0.1:8093 \
+  cargo run -p hhub-risk-server &
+python3 server/tests/multi_instance.py     # PASS=5
+```
+
+- 挑战：`SETEX risk:ch:<id> 120 "<challenge>|<mix>"`，验证时 `GET` + `DEL`（一次性）；
+- 限流：按 IP 固定窗口，`/v1/challenge` 30/min、`/v1/attest` 20/min，超限 429；
+- 没配 `RISK_REDIS` 时用内存（单实例/测试），启动日志会明确写"内存（单实例）"。
+
 ## 协议
 
 | 方法 | 路径 | 说明 |
@@ -33,7 +47,7 @@ sha256( challenge | mix | canvas | round(raf_ms*10) | nonce )  前缀 difficulty
 
 ```bash
 RISK_SECRET=test-secret RISK_LISTEN=127.0.0.1:8090 cargo run -q -p hhub-risk-server &
-python3 server/tests/smoke.py        # PASS=11
+RISK_BASE=http://127.0.0.1:8090 python3 server/tests/smoke.py   # PASS=11
 ```
 
 冒烟会用 Python SDK 验签服务端签出的 token，所以它同时验证了**跨语言协议一致**。
