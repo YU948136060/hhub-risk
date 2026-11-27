@@ -1,0 +1,141 @@
+# SPDX-License-Identifier: Apache-2.0
+# 通用层与全部 SDK 的 CI：每次 push / PR 都跑。
+# 说明：
+#   · 浏览器端到端冒烟（web/test/browser-smoke.mjs）需要 Chrome + 跑在起的服务，CI 里**不跑**；
+#     它由本地/夜间任务承担（README 里有命令）。
+#   · 多实例冒烟需要 Redis，这里用 service 起一个再跑 server/tests/multi_instance.py。
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (core + server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - run: cargo test --locked -p hhub-risk-core -p hhub-risk-server
+      - run: cargo build --locked --release -p hhub-risk-server
+
+  multi-instance:
+    name: Reference server + Redis (multi-instance)
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - run: cargo build --locked -p hhub-risk-server
+      - name: start two instances (shared Redis)
+        run: |
+          for port in 8091 8093; do
+            RISK_REDIS=redis://127.0.0.1:6379/0 RISK_SECRET=test-secret \
+              RISK_LISTEN=127.0.0.1:$port ./target/debug/hhub-risk-server &
+          done
+          for _ in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8091/healthz >/dev/null && \
+            curl -sf http://127.0.0.1:8093/healthz >/dev/null && exit 0
+            sleep 0.25
+          done
+          echo "server did not start"; exit 1
+      - run: python3 server/tests/multi_instance.py
+      - run: RISK_BASE=http://127.0.0.1:8091 RISK_SECRET=test-secret python3 server/tests/smoke.py
+
+  web:
+    name: Web SDK (node --test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test web/test/
+
+  go:
+    name: Go SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+      - run: go vet ./...
+      - run: go test ./...
+
+  python:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: PYTHONPATH=sdk/python python -m unittest discover -s sdk/python/tests -v
+
+  node-sdk:
+    name: Node SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test
+
+  java:
+    name: Java SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: compile + run (no JUnit dependency)
+        working-directory: sdk/java
+        run: |
+          mkdir -p out
+          javac -encoding UTF-8 --release 17 -d out $(find src/main/java src/test/java -name '*.java')
+          java -cp out top.hydrogenion.hhubrisk.TestMain
+
+  php:
+    name: PHP SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+      - run: php -l sdk/php/src/HhubRisk.php
+      - run: php -l sdk/php/src/Psr15Middleware.php
+      - run: php sdk/php/tests/test.php

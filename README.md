@@ -5,7 +5,9 @@
 >
 > **[中文](README.zh-CN.md)** · **English**
 
-[![Architecture](docs/arch.svg)](docs/arch.svg)
+[[![ci](https://github.com/YU948136060/hhub-risk/actions/workflows/ci.yml/badge.svg)](https://github.com/YU948136060/hhub-risk/actions/workflows/ci.yml)
+
+![Architecture](docs/arch.svg)](docs/arch.svg)
 
 ## Why
 

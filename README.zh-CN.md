@@ -8,7 +8,9 @@
 > **许可证是分开的**：后端（`core/`、未来的 `server/`）**AGPL-3.0**；
 > 前端与 SDK（`web/`、`sdk/*`）**Apache-2.0**。详见 [LICENSE 说明](#许可证)。
 
-[![架构图](docs/arch.zh.svg)](docs/arch.zh.svg)
+[[![ci](https://github.com/YU948136060/hhub-risk/actions/workflows/ci.yml/badge.svg)](https://github.com/YU948136060/hhub-risk/actions/workflows/ci.yml)
+
+![架构图](docs/arch.zh.svg)](docs/arch.zh.svg)
 
 ## 为什么
 
