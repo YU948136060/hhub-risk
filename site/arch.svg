@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="470" viewBox="0 0 1100 470" font-family="-apple-system,'Noto Sans CJK SC','Microsoft YaHei',system-ui,sans-serif">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9da7b3"/></marker></defs>
+<rect width="1100" height="470" fill="#0d1117"/>
+<text x="28" y="40" fill="#e8b93c" font-size="22" font-weight="700">hhub-risk</text>
+<text x="170" y="40" fill="#9da7b3" font-size="13">only generic layer is published · decisions are server-side</text>
+<rect x="30" y="72" width="270" height="156" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+<text x="44" y="99" fill="#e8b93c" font-size="16" font-weight="700">Browser (hhub-risk.js)</text>
+<text x="44" y="124" fill="#e6edf3" font-size="14">L1  canvas / WebGL / rAF / UA</text>
+<text x="44" y="145" fill="#e6edf3" font-size="14">L2  pointer / keys / dwell / video</text>
+<text x="44" y="166" fill="#e6edf3" font-size="14">solve PoW bound to entropy</text>
+<text x="44" y="187" fill="#e6edf3" font-size="14">zero dependencies · ~10 KB</text>
+<rect x="440" y="66" width="310" height="236" rx="10" fill="#161b22" stroke="#e8b93c" stroke-width="1.5"/>
+<text x="454" y="93" fill="#e8b93c" font-size="16" font-weight="700">Risk server  (AGPL-3.0)</text>
+<text x="454" y="118" fill="#e6edf3" font-size="14">verify PoW + environment evidence</text>
+<text x="454" y="139" fill="#e6edf3" font-size="14">score L1..L5  →  risk 0..100</text>
+<text x="454" y="160" fill="#e6edf3" font-size="14">decide: allow / challenge / step_up / deny</text>
+<text x="454" y="181" fill="#e6edf3" font-size="14">sign HMAC token  (v1.&lt;payload&gt;.&lt;sig&gt;)</text>
+<rect x="452" y="200" width="286" height="90" rx="8" fill="#1b1214" stroke="#f85149" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="466" y="224" fill="#f85149" font-size="13" font-weight="700">site-specific rules</text>
+<text x="466" y="246" fill="#9da7b3" font-size="12">not open source</text>
+<text x="466" y="268" fill="#9da7b3" font-size="12">Rule trait = interface only</text>
+<rect x="830" y="72" width="240" height="156" rx="10" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+<text x="844" y="99" fill="#e8b93c" font-size="16" font-weight="700">Your backend (SDK)</text>
+<text x="844" y="124" fill="#e6edf3" font-size="14">Go / Python / Node / Java / PHP</text>
+<text x="844" y="145" fill="#e6edf3" font-size="14">act on risk / action</text>
+<rect x="440" y="350" width="310" height="66" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+<text x="454" y="377" fill="#9da7b3" font-size="16" font-weight="700">Redis</text>
+<text x="454" y="402" fill="#e6edf3" font-size="14">Redis: challenges · rate limits · optional history</text>
+<line x1="302" y1="120" x2="438" y2="120" stroke="#9da7b3" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="370.0" y="112.0" fill="#9da7b3" font-size="12" text-anchor="middle">POST /v1/challenge</text>
+<line x1="302" y1="188" x2="438" y2="188" stroke="#9da7b3" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="370.0" y="166.0" fill="#9da7b3" font-size="12" text-anchor="middle">POST /v1/attest</text>
+<text x="370.0" y="180.0" fill="#9da7b3" font-size="12" text-anchor="middle">(nonce + fingerprint)</text>
+<line x1="752" y1="140" x2="828" y2="140" stroke="#9da7b3" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="790.0" y="132.0" fill="#9da7b3" font-size="12" text-anchor="middle">X-HHub-Risk</text>
+<line x1="595" y1="304" x2="595" y2="348" stroke="#30363d" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="5 4"/>
+<text x="30" y="450" fill="#9da7b3" font-size="12">AGPL-3.0 (core/server) · Apache-2.0 (web/sdk) · one cross-language token vector</text>
+</svg>

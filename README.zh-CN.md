@@ -8,6 +8,8 @@
 > **许可证是分开的**：后端（`core/`、未来的 `server/`）**AGPL-3.0**；
 > 前端与 SDK（`web/`、`sdk/*`）**Apache-2.0**。详见 [LICENSE 说明](#许可证)。
 
+[![架构图](docs/arch.zh.svg)](docs/arch.zh.svg)
+
 ## 为什么
 
 自托管社交平台（Mastodon、Misskey、小型社区）经常只有两个选择：挂一个闭源验证码（用户数据出境），

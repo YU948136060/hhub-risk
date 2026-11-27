@@ -3,6 +3,8 @@
 > Generic layer: **browser attestation + behaviour scoring + network/geo consistency + pluggable captcha**.
 > All decisions happen on the server; the client only collects signals.
 
+![Architecture](../arch.svg)
+
 ## 1. Layers
 
 ```

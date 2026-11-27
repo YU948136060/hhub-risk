@@ -5,6 +5,8 @@
 >
 > **[中文](README.zh-CN.md)** · **English**
 
+[![Architecture](docs/arch.svg)](docs/arch.svg)
+
 ## Why
 
 Self-hosted social platforms usually get two choices: embed a closed-source captcha
