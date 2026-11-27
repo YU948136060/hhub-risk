@@ -66,6 +66,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hhub-risk-server"
+version = "0.1.0"
+dependencies = [
+ "hhub-risk-core",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"

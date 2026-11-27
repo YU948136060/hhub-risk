@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+openapi: 3.0.3
+info:
+  title: hhub-risk reference API
+  version: 0.1.0
+  description: |
+    风控层的参考 HTTP 契约。token 与 core / 五种语言 SDK 一致；
+    生产实现必须把挑战存储换成共享存储（Redis），并按 IP 限流。
+paths:
+  /v1/challenge:
+    post:
+      summary: 发一个浏览器见证挑战
+      responses:
+        "200":
+          description: 挑战
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [challenge_id, challenge, mix, difficulty]
+                properties:
+                  challenge_id: { type: string }
+                  challenge: { type: string }
+                  mix: { type: string }
+                  difficulty: { type: integer, minimum: 1, maximum: 6 }
+  /v1/attest:
+    post:
+      summary: 提交 PoW + 浏览器环境，换 token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, nonce, fp]
+              properties:
+                challenge_id: { type: string }
+                nonce: { type: string }
+                geo_country: { type: string, nullable: true }
+                fp:
+                  type: object
+                  required: [ua, canvas, raf, raf_ms, screen, tz, lang]
+                  properties:
+                    ua: { type: string }
+                    lang: { type: string }
+                    tz: { type: string }
+                    screen: { type: string, example: "1920x1080x24" }
+                    canvas: { type: string, minLength: 32 }
+                    webgl: { type: string }
+                    raf: { type: integer, minimum: 0 }
+                    raf_ms: { type: number }
+                    dpr: { type: number }
+                    private: { type: boolean }
+      responses:
+        "200":
+          description: 通过
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  ttl: { type: integer }
+                  risk: { type: integer, minimum: 0, maximum: 100 }
+                  strong: { type: boolean }
+                  reasons: { type: array, items: { type: string } }
+        "400": { description: 挑战过期/已用/PoW 不对 }
+        "403": { description: 环境不像浏览器 }
+  /v1/score:
+    post:
+      summary: 行为遥测打分
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fp: { type: object }
+                geo_country: { type: string }
+                telemetry:
+                  type: object
+                  properties:
+                    pointer: { type: integer }
+                    touch: { type: integer }
+                    keys: { type: integer }
+                    plays: { type: integer }
+                    corrections: { type: integer }
+                    dwell_ms: { type: integer }
+                    video_ms: { type: integer }
+                    visible: { type: boolean }
+      responses:
+        "200":
+          description: 判定
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk: { type: integer }
+                  action: { type: string, enum: [allow, challenge, step_up, deny] }
+                  reasons: { type: array, items: { type: string } }
+  /v1/verify:
+    get:
+      summary: 本地验签 token
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 验签结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  claims: { type: object, nullable: true }
+  /healthz:
+    get:
+      summary: 健康检查
+      responses:
+        "200":
+          description: ok

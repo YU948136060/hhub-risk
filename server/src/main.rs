@@ -1,0 +1,366 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+//! hhub-risk 参考服务器（**最小可跑**，故意只用 std + serde_json，不引 web 框架）。
+//!
+//! 目的不是生产部署，而是给 SDK/前端一个**能对齐协议**的参考实现：
+//!
+//! ```text
+//! POST /v1/challenge   → {challenge_id, challenge, mix, difficulty}
+//! POST /v1/attest      → 校验 PoW（绑定浏览器熵）+ 环境证据 → {token, ttl, risk, reasons}
+//! POST /v1/score       → 行为遥测 + 上下文 → {risk, action, reasons}
+//! GET  /v1/verify?token=… → {valid, claims}
+//! GET  /healthz
+//! ```
+//!
+//! 生产落地时请替换：
+//! * 挑战存储（这里内存 + Mutex，多实例会失效 → 用 Redis）；
+//! * IP 地理（这里只接受调用方传入的 `geo_country`）；
+//! * TLS（这里明文 HTTP，前面必须挂反代）。
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+
+const DIFFICULTY: u8 = 3;
+const CHALLENGE_TTL: Duration = Duration::from_secs(120);
+const TOKEN_TTL_SECS: i64 = 1800;
+
+struct Challenge {
+    challenge: String,
+    mix: String,
+    created: Instant,
+    used: bool,
+}
+
+type Store = Arc<Mutex<HashMap<String, Challenge>>>;
+
+fn random_hex(n: usize) -> String {
+    use rand_like::Rng;
+    let mut rng = Rng::new();
+    (0..n).map(|_| format!("{:x}", rng.next() % 16)).collect()
+}
+
+/// 极小的线程无关 RNG：用系统时间 + 进程内计数混合 SHA-256。
+/// 参考实现够用；生产请用 `getrandom`/`rand`（本站主仓库就是这么做的）。
+mod rand_like {
+    use sha2::{Digest, Sha256};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    pub struct Rng {
+        state: [u8; 32],
+    }
+
+    impl Rng {
+        pub fn new() -> Self {
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let mut h = Sha256::new();
+            h.update(t.to_le_bytes());
+            h.update(n.to_le_bytes());
+            h.update(std::process::id().to_le_bytes());
+            Rng { state: h.finalize().into() }
+        }
+
+        pub fn next(&mut self) -> u64 {
+            let mut h = Sha256::new();
+            h.update(self.state);
+            self.state = h.finalize().into();
+            u64::from_le_bytes(self.state[..8].try_into().unwrap_or([0; 8]))
+        }
+    }
+}
+
+/// `sha256(challenge | mix | canvas | round(raf_ms*10) | nonce)` 前缀 d 个 0。
+fn verify_bound_pow(challenge: &str, mix: &str, canvas: &str, raf_ms: f64, nonce: &str, d: u8) -> bool {
+    if challenge.is_empty() || mix.is_empty() || canvas.is_empty() || nonce.is_empty() || d == 0 || d > 6 {
+        return false;
+    }
+    let material = format!("{challenge}|{mix}|{canvas}|{}", (raf_ms * 10.0).round() as i64);
+    let mut h = Sha256::new();
+    h.update(material.as_bytes());
+    h.update(nonce.as_bytes());
+    format!("{:x}", h.finalize()).starts_with(&"0".repeat(d as usize))
+}
+
+/// 环境证据计数：六项里至少 2 项才算"像浏览器"（与本站生产口径一致）。
+fn fp_evidence(fp: &Value) -> (usize, bool) {
+    let s = |k: &str| fp.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    let canvas = s("canvas");
+    let canvas_ok = canvas.len() >= 32 && canvas.chars().all(|c| c.is_ascii_hexdigit());
+    let webgl = s("webgl");
+    let webgl_ok = !webgl.is_empty() && webgl.len() <= 256;
+    let raf = fp.get("raf").and_then(Value::as_u64).unwrap_or(0);
+    let raf_ms = fp.get("raf_ms").and_then(Value::as_f64).unwrap_or(0.0);
+    let raf_ok = raf >= 3 && (30.0..=30_000.0).contains(&raf_ms);
+    let screen = s("screen");
+    let screen_ok = screen.split('x').count() == 3 && screen.split('x').all(|p| p.parse::<u32>().is_ok());
+    let tz_ok = !s("tz").is_empty();
+    let lang_ok = !s("lang").is_empty();
+    let n = [canvas_ok, webgl_ok, raf_ok, screen_ok, tz_ok, lang_ok].iter().filter(|x| **x).count();
+    (n, n == 6)
+}
+
+fn fp_hash(fp: &Value) -> String {
+    let mut h = Sha256::new();
+    for k in ["canvas", "webgl", "screen", "tz", "lang"] {
+        h.update(fp.get(k).and_then(Value::as_str).unwrap_or("").as_bytes());
+        h.update(b"|");
+    }
+    let d = h.finalize();
+    d[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn http(mut s: TcpStream, store: Store, secret: Vec<u8>) {
+    let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    let header_end = loop {
+        match s.read(&mut tmp) {
+            Ok(0) => return,
+            Ok(n) => {
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(p) = find_headers_end(&buf) { break p; }
+                if buf.len() > 64 * 1024 { return; }
+            }
+            Err(_) => return,
+        }
+    };
+    let head = String::from_utf8_lossy(&buf[..header_end]).to_string();
+    let mut lines = head.split("\r\n");
+    let req_line = lines.next().unwrap_or("");
+    let mut it = req_line.split_whitespace();
+    let method = it.next().unwrap_or("");
+    let path = it.next().unwrap_or("");
+    let mut content_len = 0usize;
+    for l in lines {
+        if let Some((k, v)) = l.split_once(':') {
+            if k.eq_ignore_ascii_case("content-length") {
+                content_len = v.trim().parse().unwrap_or(0);
+            }
+        }
+    }
+    let body_start = header_end + 4;
+    while buf.len() < body_start + content_len {
+        match s.read(&mut tmp) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&tmp[..n]),
+            Err(_) => break,
+        }
+    }
+    let body = String::from_utf8_lossy(&buf[body_start..(body_start + content_len).min(buf.len())]).to_string();
+
+    let (status, payload) = route(method, path, &body, &store, &secret);
+    let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
+    let resp = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{text}",
+        text.len()
+    );
+    let _ = s.write_all(resp.as_bytes());
+}
+
+fn find_headers_end(b: &[u8]) -> Option<usize> {
+    b.windows(4).position(|w| w == b"\r\n\r\n")
+}
+
+fn route(method: &str, path: &str, body: &str, store: &Store, secret: &[u8]) -> (&'static str, Value) {
+    let (path_only, query) = path.split_once('?').unwrap_or((path, ""));
+    match (method, path_only) {
+        ("GET", "/healthz") => ("200 OK", json!({"ok": true})),
+        ("POST", "/v1/challenge") => ("200 OK", issue_challenge(store)),
+        ("POST", "/v1/attest") => match parse_json(body) {
+            Some(v) => attest(store, secret, &v),
+            None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
+        },
+        ("POST", "/v1/score") => match parse_json(body) {
+            Some(v) => score(&v),
+            None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
+        },
+        ("GET", "/v1/verify") => verify_token(query, secret),
+        _ => ("404 Not Found", json!({"error": "not found"})),
+    }
+}
+
+fn parse_json(s: &str) -> Option<Value> {
+    serde_json::from_str(s).ok()
+}
+
+fn issue_challenge(store: &Store) -> Value {
+    let id = random_hex(16);
+    let challenge = random_hex(16);
+    let mix = random_hex(16);
+    let mut m = store.lock().unwrap_or_else(|e| e.into_inner());
+    m.retain(|_, c| c.created.elapsed() < CHALLENGE_TTL && !c.used);
+    m.insert(id.clone(), Challenge { challenge: challenge.clone(), mix: mix.clone(), created: Instant::now(), used: false });
+    json!({"challenge_id": id, "challenge": challenge, "mix": mix, "difficulty": DIFFICULTY})
+}
+
+fn attest(store: &Store, secret: &[u8], body: &Value) -> (&'static str, Value) {
+    let s = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    let id = s("challenge_id");
+    let nonce = s("nonce");
+    let fp = body.get("fp").cloned().unwrap_or(Value::Null);
+    if id.is_empty() || nonce.is_empty() || !fp.is_object() {
+        return ("400 Bad Request", json!({"error": "缺少 challenge_id/nonce/fp"}));
+    }
+    let ch = {
+        let mut m = store.lock().unwrap_or_else(|e| e.into_inner());
+        match m.get_mut(&id) {
+            Some(c) if !c.used && c.created.elapsed() < CHALLENGE_TTL => {
+                c.used = true;
+                Some((c.challenge.clone(), c.mix.clone()))
+            }
+            _ => None,
+        }
+    };
+    let Some((challenge, mix)) = ch else {
+        return ("400 Bad Request", json!({"error": "挑战已过期或已使用"}));
+    };
+
+    let ua = fp.get("ua").and_then(Value::as_str).unwrap_or("").to_ascii_lowercase();
+    if ua.is_empty() || !ua.contains("mozilla/") || !(ua.contains("chrome") || ua.contains("safari") || ua.contains("firefox")) {
+        return ("403 Forbidden", json!({"error": "客户端不是浏览器"}));
+    }
+    if ["curl", "wget", "python-requests", "go-http-client", "okhttp"].iter().any(|b| ua.contains(b)) {
+        return ("403 Forbidden", json!({"error": "客户端不是浏览器"}));
+    }
+    let canvas = fp.get("canvas").and_then(Value::as_str).unwrap_or("");
+    let raf_ms = fp.get("raf_ms").and_then(Value::as_f64).unwrap_or(0.0);
+    if !verify_bound_pow(&challenge, &mix, canvas, raf_ms, &nonce, DIFFICULTY) {
+        return ("400 Bad Request", json!({"error": "见证校验失败"}));
+    }
+    let (evidence, strong) = fp_evidence(&fp);
+    if evidence < 2 {
+        return ("403 Forbidden", json!({"error": "缺少浏览器环境信息"}));
+    }
+
+    let ctx = hhub_risk_core::RiskContext {
+        tz: fp.get("tz").and_then(Value::as_str).unwrap_or("").to_string(),
+        lang: fp.get("lang").and_then(Value::as_str).unwrap_or("").to_string(),
+        geo_country: body.get("geo_country").and_then(Value::as_str).unwrap_or("").to_string(),
+        private: fp.get("private").and_then(Value::as_bool).unwrap_or(false),
+        telemetry: hhub_risk_core::Telemetry::default(),
+        ..Default::default()
+    };
+    let (risk, reasons) = hhub_risk_core::evaluate(&ctx, &[]);
+    let action = hhub_risk_core::decide(risk);
+    let exp = now_secs() + TOKEN_TTL_SECS;
+    let claims = json!({
+        "risk": risk,
+        "action": format!("{action:?}").to_lowercase(),
+        "fp": fp_hash(&fp),
+        "exp": exp,
+        "reasons": reasons,
+    });
+    let token = hhub_risk_core::sign_token(secret, &claims);
+    ("200 OK", json!({"token": token, "ttl": TOKEN_TTL_SECS, "risk": risk, "strong": strong, "reasons": claims["reasons"]}))
+}
+
+fn score(body: &Value) -> (&'static str, Value) {
+    let fp = body.get("fp").cloned().unwrap_or(Value::Null);
+    let telemetry = hhub_risk_core::Telemetry::from_json(body.get("telemetry").unwrap_or(&Value::Null));
+    let ctx = hhub_risk_core::RiskContext {
+        tz: fp.get("tz").and_then(Value::as_str).unwrap_or("").to_string(),
+        lang: fp.get("lang").and_then(Value::as_str).unwrap_or("").to_string(),
+        geo_country: body.get("geo_country").and_then(Value::as_str).unwrap_or("").to_string(),
+        private: fp.get("private").and_then(Value::as_bool).unwrap_or(false),
+        telemetry,
+        ..Default::default()
+    };
+    let (risk, reasons) = hhub_risk_core::evaluate(&ctx, &[]);
+    let action = hhub_risk_core::decide(risk);
+    ("200 OK", json!({"risk": risk, "action": format!("{action:?}").to_lowercase(), "reasons": reasons}))
+}
+
+fn verify_token(query: &str, secret: &[u8]) -> (&'static str, Value) {
+    let token = query.split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .find(|(k, _)| *k == "token")
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_default();
+    match hhub_risk_core::verify_token(secret, &token) {
+        Some(claims) => ("200 OK", json!({"valid": true, "claims": claims})),
+        None => ("200 OK", json!({"valid": false})),
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn main() {
+    let listen = std::env::var("RISK_LISTEN").unwrap_or_else(|_| "127.0.0.1:8090".into());
+    let secret = std::env::var("RISK_SECRET").unwrap_or_else(|_| {
+        eprintln!("⚠️  RISK_SECRET 未设置，使用 dev-secret（生产必须改）");
+        "dev-secret".into()
+    });
+    let store: Store = Arc::new(Mutex::new(HashMap::new()));
+    let listener = match TcpListener::bind(&listen) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("无法监听 {listen}: {e}");
+            std::process::exit(1);
+        }
+    };
+    println!("hhub-risk reference server on http://{listen}  (AGPL-3.0)");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(s) => {
+                let store = Arc::clone(&store);
+                let secret = secret.clone().into_bytes();
+                std::thread::spawn(move || http(s, store, secret));
+            }
+            Err(e) => eprintln!("accept: {e}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn solve(challenge: &str, mix: &str, canvas: &str, raf: f64) -> String {
+        for i in 0..200_000u32 {
+            if verify_bound_pow(challenge, mix, canvas, raf, &i.to_string(), DIFFICULTY) {
+                return i.to_string();
+            }
+        }
+        panic!("找不到解");
+    }
+
+    #[test]
+    fn pow_binds_to_fingerprint() {
+        let (c, m, canvas) = ("c1", "m1", "a".repeat(64));
+        let nonce = solve(c, m, &canvas, 333.3);
+        assert!(verify_bound_pow(c, m, &canvas, 333.3, &nonce, DIFFICULTY));
+        assert!(!verify_bound_pow(c, m, &"b".repeat(64), 333.3, &nonce, DIFFICULTY));
+        assert!(!verify_bound_pow(c, m, &canvas, 400.0, &nonce, DIFFICULTY));
+    }
+
+    #[test]
+    fn evidence_counting() {
+        let fp = json!({"ua":"Mozilla/5.0 Chrome/131","canvas":"a".repeat(64),
+                        "webgl":"Google|ANGLE","raf":20,"raf_ms":330.0,
+                        "screen":"1920x1080x24","tz":"Asia/Shanghai","lang":"zh-CN"});
+        assert_eq!(fp_evidence(&fp), (6, true));
+        let bare = json!({"ua":"Mozilla/5.0 Chrome/131"});
+        assert_eq!(fp_evidence(&bare).0, 0);
+    }
+
+    #[test]
+    fn fingerprint_hash_is_stable() {
+        let fp = json!({"canvas":"x","webgl":"y","screen":"1x1x24","tz":"t","lang":"l"});
+        assert_eq!(fp_hash(&fp).len(), 16);
+        assert_eq!(fp_hash(&fp), fp_hash(&fp));
+    }
+}

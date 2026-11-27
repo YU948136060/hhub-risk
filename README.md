@@ -22,16 +22,21 @@
 |---|---|---|
 | L1 浏览器见证 | canvas/WebGL/rAF/UA 一致性 + 绑定熵的 PoW | 已在 HHub 生产使用 |
 | L2 行为评分 | 指针/触摸/按键/停留/改选/看视频 → 0~100 分 | 已在 HHub 生产使用 |
-| L3 网络地理 | IP → 国家/省/市；时区/语言一致性 | 设计完成，开发中 |
-| L4 长期画像 | 指纹/IP 日表、长期矛盾规则 | 未开始 |
-| L5 账号/会话 | 新设备/无痕/主设备 | 未开始 |
+| L3 网络地理 | IP → 国家/省/市；时区/语言一致性 | ✅ 已在 HHub 生产使用 |
+| L4 长期画像 | 指纹/IP 日表、长期矛盾规则 | ✅ 已在 HHub 生产使用（规则本身不开源） |
+| L5 账号/会话 | 新设备/无痕/主设备 | ✅ 无痕闸门（方案 B：邮箱 step-up）已在 HHub 生产使用 |
+| 协议 | `/v1/challenge` `/v1/attest` `/v1/score` `/v1/verify` | ✅ 参考 server + OpenAPI |
 
 ## 仓库结构
 
 ```
 risk/
-  core/          Rust crate：信号打分、决策、token 签名（无 IO，可嵌进任何 Rust 服务）
-  LICENSE        AGPL-3.0
+  core/            Rust crate：信号打分、决策、token 签名（无 IO，可嵌进任何 Rust 服务）
+  server/          参考 HTTP 服务（std + serde_json，无 web 框架）+ OpenAPI
+  web/             前端 SDK（零依赖）+ React / Vue / Web Component 薄壳
+  sdk/{go,python,node,java,php}/   本地验签 + 中间件
+  deploy/          nginx / 部署说明
+  LICENSE-AGPL-3.0 / LICENSE-APACHE-2.0
 ```
 
 已有：`sdk/{go,python,node,java,php}`（全部 Apache-2.0，同一套跨语言测试向量）。

@@ -1,0 +1,11 @@
+[package]
+name = "hhub-risk-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# 通用层（AGPL-3.0）：打分/决策/HMAC token
+hhub-risk-core = { path = "../core" }
+serde_json = "1"
+sha2 = "0.10"
