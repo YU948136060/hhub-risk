@@ -41,34 +41,87 @@ struct Counters {
     attest_ok: AtomicU64,
     attest_bad: AtomicU64,
     score: AtomicU64,
-    verify: AtomicU64,
+    verify_ok: AtomicU64,
+    verify_bad: AtomicU64,
+    rate_limited_challenge: AtomicU64,
+    rate_limited_attest: AtomicU64,
+    /// attest 被拒原因：expired / non_browser / bad_pow / weak_evidence / other
+    attest_rejected: [AtomicU64; 5],
+    /// 决策分布：allow / challenge / step_up / deny
+    decision: [AtomicU64; 4],
 }
 type SharedCounters = Arc<Counters>;
 
+/// 判定原因归类（顺序必须与 `Counters::attest_rejected` 的下标一致）
+fn reject_idx(status: &str, body: &Value) -> usize {
+    if status == "200 OK" { return 5; }
+    let e = body.get("error").and_then(Value::as_str).unwrap_or("");
+    if e.contains("过期") || e.contains("已使用") { 0 }
+    else if e.contains("浏览器") { 1 }
+    else if e.contains("见证校验") { 2 }
+    else if e.contains("环境信息") { 3 }
+    else { 4 }
+}
+
+fn action_idx(action: &str) -> Option<usize> {
+    match action {
+        "allow" => Some(0),
+        "challenge" => Some(1),
+        "step_up" => Some(2),
+        "deny" => Some(3),
+        _ => None,
+    }
+}
+
 fn render_metrics(c: &SharedCounters, store: &SharedStore) -> String {
     let backend = store.backend();
+    let rej = |i: usize| c.attest_rejected[i].load(Ordering::Relaxed);
+    let dec = |i: usize| c.decision[i].load(Ordering::Relaxed);
     format!(
         "# HELP hhub_risk_challenges_total 发出的挑战数（含被限流拒绝的）\n\
 # TYPE hhub_risk_challenges_total counter\n\
 hhub_risk_challenges_total {}\n\
+# HELP hhub_risk_rate_limited_total 被按 IP 限流拒绝的次数（按端点）\n\
+# TYPE hhub_risk_rate_limited_total counter\n\
+hhub_risk_rate_limited_total{{endpoint=\"challenge\"}} {}\n\
+hhub_risk_rate_limited_total{{endpoint=\"attest\"}} {}\n\
 # HELP hhub_risk_attest_total 见证请求（按结果）\n\
 # TYPE hhub_risk_attest_total counter\n\
 hhub_risk_attest_total{{result=\"ok\"}} {}\n\
 hhub_risk_attest_total{{result=\"failed\"}} {}\n\
+# HELP hhub_risk_attest_rejected_total 见证被拒原因\n\
+# TYPE hhub_risk_attest_rejected_total counter\n\
+hhub_risk_attest_rejected_total{{reason=\"expired\"}} {}\n\
+hhub_risk_attest_rejected_total{{reason=\"non_browser\"}} {}\n\
+hhub_risk_attest_rejected_total{{reason=\"bad_pow\"}} {}\n\
+hhub_risk_attest_rejected_total{{reason=\"weak_evidence\"}} {}\n\
+hhub_risk_attest_rejected_total{{reason=\"other\"}} {}\n\
+# HELP hhub_risk_decision_total 决策分布（attest/score 合计）\n\
+# TYPE hhub_risk_decision_total counter\n\
+hhub_risk_decision_total{{action=\"allow\"}} {}\n\
+hhub_risk_decision_total{{action=\"challenge\"}} {}\n\
+hhub_risk_decision_total{{action=\"step_up\"}} {}\n\
+hhub_risk_decision_total{{action=\"deny\"}} {}\n\
 # HELP hhub_risk_score_total 打分请求数\n\
 # TYPE hhub_risk_score_total counter\n\
 hhub_risk_score_total {}\n\
-# HELP hhub_risk_verify_total token 验签请求数\n\
+# HELP hhub_risk_verify_total token 验签请求数（按结果）\n\
 # TYPE hhub_risk_verify_total counter\n\
-hhub_risk_verify_total {}\n\
+hhub_risk_verify_total{{result=\"valid\"}} {}\n\
+hhub_risk_verify_total{{result=\"invalid\"}} {}\n\
 # HELP hhub_risk_store 挑战存储后端（1=当前）\n\
 # TYPE hhub_risk_store gauge\n\
 hhub_risk_store{{backend=\"{}\"}} 1\n",
         c.challenges.load(Ordering::Relaxed),
+        c.rate_limited_challenge.load(Ordering::Relaxed),
+        c.rate_limited_attest.load(Ordering::Relaxed),
         c.attest_ok.load(Ordering::Relaxed),
         c.attest_bad.load(Ordering::Relaxed),
+        rej(0), rej(1), rej(2), rej(3), rej(4),
+        dec(0), dec(1), dec(2), dec(3),
         c.score.load(Ordering::Relaxed),
-        c.verify.load(Ordering::Relaxed),
+        c.verify_ok.load(Ordering::Relaxed),
+        c.verify_bad.load(Ordering::Relaxed),
         backend,
     )
 }
@@ -223,6 +276,10 @@ fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &Shared
     if limit > 0 {
         let key = format!("risk:rl:{limit_path}:{ip}:{minute}");
         if store.incr_rate(&key) > limit {
+            match limit_path {
+                "challenge" => counters.rate_limited_challenge.fetch_add(1, Ordering::Relaxed),
+                _ => counters.rate_limited_attest.fetch_add(1, Ordering::Relaxed),
+            };
             return ("429 Too Many Requests", json!({"error": "请求过于频繁，请稍后再试"}));
         }
     }
@@ -239,19 +296,33 @@ fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &Shared
                 None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
             };
             if out.0 == "200 OK" { counters.attest_ok.fetch_add(1, Ordering::Relaxed); }
-            else { counters.attest_bad.fetch_add(1, Ordering::Relaxed); }
+            else {
+                counters.attest_bad.fetch_add(1, Ordering::Relaxed);
+                let idx = reject_idx(out.0, &out.1);
+                if idx < 5 { counters.attest_rejected[idx].fetch_add(1, Ordering::Relaxed); }
+            }
+            if let Some(i) = out.1.get("action").and_then(Value::as_str).and_then(action_idx) {
+                counters.decision[i].fetch_add(1, Ordering::Relaxed);
+            }
             out
         }
         ("POST", "/v1/score") => {
             counters.score.fetch_add(1, Ordering::Relaxed);
-            match parse_json(body) {
+            let out = match parse_json(body) {
                 Some(v) => score(&v),
                 None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
+            };
+            if let Some(i) = out.1.get("action").and_then(Value::as_str).and_then(action_idx) {
+                counters.decision[i].fetch_add(1, Ordering::Relaxed);
             }
+            out
         }
         ("GET", "/v1/verify") => {
-            counters.verify.fetch_add(1, Ordering::Relaxed);
-            verify_token(query, secret)
+            let out = verify_token(query, secret);
+            let valid = out.1.get("valid").and_then(Value::as_bool).unwrap_or(false);
+            if valid { counters.verify_ok.fetch_add(1, Ordering::Relaxed); }
+            else { counters.verify_bad.fetch_add(1, Ordering::Relaxed); }
+            out
         }
         _ => ("404 Not Found", json!({"error": "not found"})),
     }
@@ -539,9 +610,17 @@ mod tests {
         let c: SharedCounters = Arc::new(Counters::default());
         c.challenges.fetch_add(2, Ordering::Relaxed);
         c.attest_ok.fetch_add(1, Ordering::Relaxed);
+        c.attest_rejected[1].fetch_add(3, Ordering::Relaxed);
+        c.decision[2].fetch_add(1, Ordering::Relaxed);
+        c.verify_bad.fetch_add(4, Ordering::Relaxed);
+        c.rate_limited_attest.fetch_add(5, Ordering::Relaxed);
         let text = render_metrics(&c, &store);
         assert!(text.contains("hhub_risk_challenges_total 2"), "{text}");
         assert!(text.contains("hhub_risk_attest_total{result=\"ok\"} 1"), "{text}");
+        assert!(text.contains("hhub_risk_attest_rejected_total{reason=\"non_browser\"} 3"), "{text}");
+        assert!(text.contains("hhub_risk_decision_total{action=\"step_up\"} 1"), "{text}");
+        assert!(text.contains("hhub_risk_verify_total{result=\"invalid\"} 4"), "{text}");
+        assert!(text.contains("hhub_risk_rate_limited_total{endpoint=\"attest\"} 5"), "{text}");
         assert!(text.contains("backend=\"memory\""), "{text}");
     }
 

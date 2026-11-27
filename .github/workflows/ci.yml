@@ -126,8 +126,11 @@ jobs:
         working-directory: sdk/java
         run: |
           mkdir -p out
-          javac -encoding UTF-8 --release 17 -d out $(find src/main/java src/test/java -name '*.java')
+          javac -encoding UTF-8 --release 17 -d out $(find src/main/java src/test/java examples -name '*.java')
           java -cp out top.hydrogenion.hhubrisk.TestMain
+          # 无框架示例：缺 token 时必须 fail-closed 到 deny（退出码 2）
+          java -cp out examples.PlainGuardExample > /tmp/gate.json || true
+          grep -q '"gate":"deny"' /tmp/gate.json
 
   php:
     name: PHP SDK
@@ -140,4 +143,10 @@ jobs:
           coverage: none
       - run: php -l sdk/php/src/HhubRisk.php
       - run: php -l sdk/php/src/Psr15Middleware.php
+      - run: php -l sdk/php/examples/guard.php
       - run: php sdk/php/tests/test.php
+      - name: fail-closed example
+        run: |
+          out=$(php sdk/php/examples/guard.php || true)
+          echo "$out"
+          case "$out" in *'"gate":"deny"'*) ;; *) exit 1;; esac

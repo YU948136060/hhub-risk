@@ -108,5 +108,7 @@ with urllib.request.urlopen(BASE + "/metrics", timeout=10) as r:
     mt = r.read().decode()
 ok("hhub_risk_challenges_total" in mt and "backend=" in mt, "metrics 端点")
 ok("hhub_risk_attest_total{result=\"ok\"}" in mt, "metrics 含 attest 结果")
+ok('hhub_risk_attest_rejected_total{reason=' in mt, "metrics 含拒因")
+ok('hhub_risk_decision_total{action=' in mt, "metrics 含决策分布")
 
 print(f"PASS={passed}")

@@ -37,6 +37,27 @@ FilterRegistrationBean<Filter> hhubRisk() {
 
 业务里读：`Claims c = (Claims) request.getAttribute("risk");`
 
+## 无框架示例（不依赖 servlet API）
+
+`RiskGate` 把分数映射成 `allow / challenge / step_up / deny`，任意网关、gRPC filter、
+自研 HTTP 层都能直接用：
+
+```java
+Claims c = HhubRisk.claimsOrDefault(secret, header);
+switch (RiskGate.fromClaims(c)) {
+    case ALLOW -> chain.doFilter(req, res);
+    case DENY -> sendError(403);
+    default -> sendChallenge(req, res);     // challenge / step_up
+}
+```
+
+可运行示例：`examples/PlainGuardExample.java`（缺 token → `deny`，退出码 2）。
+
+```bash
+javac --release 17 -d out $(find src/main/java examples -name '*.java')
+HHUB_RISK_SECRET=test-secret java -cp out examples.PlainGuardExample "<token>"
+```
+
 ## 没有 servlet 容器的场景
 
 SDK 本体只依赖 JDK：
