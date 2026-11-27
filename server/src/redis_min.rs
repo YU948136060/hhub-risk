@@ -38,7 +38,7 @@ impl Redis {
         let s = TcpStream::connect(&self.addr).ok()?;
         s.set_read_timeout(Some(Duration::from_millis(800))).ok()?;
         s.set_write_timeout(Some(Duration::from_millis(800))).ok()?;
-        let mut r = Redis { addr: self.addr.clone(), db: self.db };
+        let r = Redis { addr: self.addr.clone(), db: self.db };
         let _ = r.cmd_on(&s, &["SELECT", &self.db.to_string()])?;
         Some(s)
     }

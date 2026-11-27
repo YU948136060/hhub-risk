@@ -103,4 +103,10 @@ ok(st2 == 400, "换指纹复用 PoW 被拒")
 st, health = get("/healthz")
 ok(health.get("ok") is True, "healthz")
 
+# /metrics：参考实现也暴露最小 Prometheus 文本（TUI/CI 可抓）
+with urllib.request.urlopen(BASE + "/metrics", timeout=10) as r:
+    mt = r.read().decode()
+ok("hhub_risk_challenges_total" in mt and "backend=" in mt, "metrics 端点")
+ok("hhub_risk_attest_total{result=\"ok\"}" in mt, "metrics 含 attest 结果")
+
 print(f"PASS={passed}")

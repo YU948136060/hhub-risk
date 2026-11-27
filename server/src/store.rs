@@ -57,6 +57,11 @@ impl Store {
         }
     }
 
+    /// "redis" / "memory"（给 /metrics 的 label 用）
+    pub fn backend(&self) -> &'static str {
+        match self { Store::Memory { .. } => "memory", Store::Redis(_) => "redis" }
+    }
+
     pub fn issue(&self, id: &str, challenge: &str, mix: &str) {
         match self {
             Store::Memory { ch, .. } => {

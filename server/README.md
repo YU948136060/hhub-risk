@@ -47,6 +47,7 @@ docker compose up --build
 | POST | `/v1/attest` | `{challenge_id, nonce, fp}` → 校验绑定熵的 PoW + 环境证据 → `{token, ttl, risk, reasons, strong}` |
 | POST | `/v1/score` | `{fp, telemetry, geo_country?}` → `{risk, action, reasons}` |
 | GET | `/v1/verify?token=…` | 本地验签 token → `{valid, claims}` |
+| GET | `/metrics` | Prometheus 文本：challenge/attest/score/verify 计数 + 存储后端 |
 | GET | `/healthz` | 健康检查 |
 
 token = `v1.<b64url(payload)>.<b64url(hmac_sha256(secret, payload))>`，

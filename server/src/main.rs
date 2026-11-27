@@ -17,6 +17,7 @@
 //! * TLS（这里明文 HTTP，前面必须挂反代）。
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,6 +32,46 @@ mod store;
 
 use store::Store;
 type SharedStore = Arc<Store>;
+
+/// 进程内计数器（`/metrics` 用）。参考实现不引 prometheus crate，
+/// 输出就是最小可用的文本格式。
+#[derive(Default)]
+struct Counters {
+    challenges: AtomicU64,
+    attest_ok: AtomicU64,
+    attest_bad: AtomicU64,
+    score: AtomicU64,
+    verify: AtomicU64,
+}
+type SharedCounters = Arc<Counters>;
+
+fn render_metrics(c: &SharedCounters, store: &SharedStore) -> String {
+    let backend = store.backend();
+    format!(
+        "# HELP hhub_risk_challenges_total 发出的挑战数（含被限流拒绝的）\n\
+# TYPE hhub_risk_challenges_total counter\n\
+hhub_risk_challenges_total {}\n\
+# HELP hhub_risk_attest_total 见证请求（按结果）\n\
+# TYPE hhub_risk_attest_total counter\n\
+hhub_risk_attest_total{{result=\"ok\"}} {}\n\
+hhub_risk_attest_total{{result=\"failed\"}} {}\n\
+# HELP hhub_risk_score_total 打分请求数\n\
+# TYPE hhub_risk_score_total counter\n\
+hhub_risk_score_total {}\n\
+# HELP hhub_risk_verify_total token 验签请求数\n\
+# TYPE hhub_risk_verify_total counter\n\
+hhub_risk_verify_total {}\n\
+# HELP hhub_risk_store 挑战存储后端（1=当前）\n\
+# TYPE hhub_risk_store gauge\n\
+hhub_risk_store{{backend=\"{}\"}} 1\n",
+        c.challenges.load(Ordering::Relaxed),
+        c.attest_ok.load(Ordering::Relaxed),
+        c.attest_bad.load(Ordering::Relaxed),
+        c.score.load(Ordering::Relaxed),
+        c.verify.load(Ordering::Relaxed),
+        backend,
+    )
+}
 
 fn random_hex(n: usize) -> String {
     use rand_like::Rng;
@@ -113,7 +154,7 @@ fn fp_hash(fp: &Value) -> String {
     d[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn http(mut s: TcpStream, peer: SocketAddr, store: SharedStore, secret: Vec<u8>) {
+fn http(mut s: TcpStream, peer: SocketAddr, store: SharedStore, secret: Vec<u8>, counters: SharedCounters) {
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
@@ -152,10 +193,14 @@ fn http(mut s: TcpStream, peer: SocketAddr, store: SharedStore, secret: Vec<u8>)
     }
     let body = String::from_utf8_lossy(&buf[body_start..(body_start + content_len).min(buf.len())]).to_string();
 
-    let (status, payload) = route(method, path, &body, &peer, &store, &secret);
-    let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
+    let (status, payload) = route(method, path, &body, &peer, &store, &secret, &counters);
+    let (ctype, text) = if path.split('?').next() == Some("/metrics") {
+        ("text/plain; version=0.0.4; charset=utf-8", payload.as_str().unwrap_or("").to_string())
+    } else {
+        ("application/json; charset=utf-8", serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into()))
+    };
     let resp = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{text}",
+        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{text}",
         text.len()
     );
     let _ = s.write_all(resp.as_bytes());
@@ -165,7 +210,7 @@ fn find_headers_end(b: &[u8]) -> Option<usize> {
     b.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
-fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &SharedStore, secret: &[u8]) -> (&'static str, Value) {
+fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &SharedStore, secret: &[u8], counters: &SharedCounters) -> (&'static str, Value) {
     let (path_only, query) = path.split_once('?').unwrap_or((path, ""));
     // 固定窗口限流：每分钟按 IP 计数（挑战 30、attest 20）
     let minute = now_secs() / 60;
@@ -183,16 +228,31 @@ fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &Shared
     }
     match (method, path_only) {
         ("GET", "/healthz") => ("200 OK", json!({"ok": true})),
-        ("POST", "/v1/challenge") => ("200 OK", issue_challenge(store)),
-        ("POST", "/v1/attest") => match parse_json(body) {
-            Some(v) => attest(store, secret, &v),
-            None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
-        },
-        ("POST", "/v1/score") => match parse_json(body) {
-            Some(v) => score(&v),
-            None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
-        },
-        ("GET", "/v1/verify") => verify_token(query, secret),
+        ("GET", "/metrics") => ("200 OK", Value::String(render_metrics(counters, store))),
+        ("POST", "/v1/challenge") => {
+            counters.challenges.fetch_add(1, Ordering::Relaxed);
+            ("200 OK", issue_challenge(store))
+        }
+        ("POST", "/v1/attest") => {
+            let out = match parse_json(body) {
+                Some(v) => attest(store, secret, &v),
+                None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
+            };
+            if out.0 == "200 OK" { counters.attest_ok.fetch_add(1, Ordering::Relaxed); }
+            else { counters.attest_bad.fetch_add(1, Ordering::Relaxed); }
+            out
+        }
+        ("POST", "/v1/score") => {
+            counters.score.fetch_add(1, Ordering::Relaxed);
+            match parse_json(body) {
+                Some(v) => score(&v),
+                None => ("400 Bad Request", json!({"error": "body 必须是 JSON"})),
+            }
+        }
+        ("GET", "/v1/verify") => {
+            counters.verify.fetch_add(1, Ordering::Relaxed);
+            verify_token(query, secret)
+        }
         _ => ("404 Not Found", json!({"error": "not found"})),
     }
 }
@@ -302,6 +362,7 @@ fn main() {
         "dev-secret".into()
     });
     let store: SharedStore = Arc::new(Store::from_env());
+    let counters: SharedCounters = Arc::new(Counters::default());
     let listener = match TcpListener::bind(&listen) {
         Ok(l) => l,
         Err(e) => {
@@ -318,8 +379,9 @@ fn main() {
                     Err(_) => continue,
                 };
                 let store = Arc::clone(&store);
+                let counters = Arc::clone(&counters);
                 let secret = secret.clone().into_bytes();
-                std::thread::spawn(move || http(s, peer, store, secret));
+                std::thread::spawn(move || http(s, peer, store, secret, counters));
             }
             Err(e) => eprintln!("accept: {e}"),
         }
@@ -364,6 +426,8 @@ mod tests {
 
     fn store() -> SharedStore { Arc::new(Store::memory()) }
 
+    fn counters() -> SharedCounters { Arc::new(Counters::default()) }
+
     fn good_fp() -> Value {
         json!({"ua":"Mozilla/5.0 Chrome/131","canvas":"d".repeat(64),
                "webgl":"Google|ANGLE","raf":20,"raf_ms":333.0,
@@ -371,7 +435,7 @@ mod tests {
     }
 
     fn challenge(store: &SharedStore) -> Value {
-        let (st, v) = route("POST", "/v1/challenge", "", &peer("127.0.0.9"), store, b"test-secret");
+        let (st, v) = route("POST", "/v1/challenge", "", &peer("127.0.0.9"), store, b"test-secret", &counters());
         assert_eq!(st, "200 OK");
         v
     }
@@ -393,15 +457,15 @@ mod tests {
         let nonce = solve_v(&ch, &fp);
         let (status, out) = route("POST", "/v1/attest", &json!({
             "challenge_id": ch["challenge_id"], "nonce": nonce, "fp": fp,
-        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(status, "200 OK", "{out}");
         assert!(out["token"].as_str().unwrap().starts_with("v1."));
         assert!(out["risk"].is_i64());
         // token 可被 verify 端点验签
         let token = out["token"].as_str().unwrap().to_string();
-        let (_, v) = route("GET", &format!("/v1/verify?token={token}"), "", &peer("127.0.0.9"), &st, b"test-secret");
+        let (_, v) = route("GET", &format!("/v1/verify?token={token}"), "", &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(v["valid"], true);
-        let (_, bad) = route("GET", &format!("/v1/verify?token={token}x"), "", &peer("127.0.0.9"), &st, b"test-secret");
+        let (_, bad) = route("GET", &format!("/v1/verify?token={token}x"), "", &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(bad["valid"], false);
     }
 
@@ -412,9 +476,9 @@ mod tests {
         let fp = good_fp();
         let nonce = solve_v(&ch, &fp);
         let body = json!({"challenge_id": ch["challenge_id"], "nonce": nonce, "fp": fp}).to_string();
-        let (s1, _) = route("POST", "/v1/attest", &body, &peer("127.0.0.9"), &st, b"test-secret");
+        let (s1, _) = route("POST", "/v1/attest", &body, &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(s1, "200 OK");
-        let (s2, _) = route("POST", "/v1/attest", &body, &peer("127.0.0.9"), &st, b"test-secret");
+        let (s2, _) = route("POST", "/v1/attest", &body, &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(s2, "400 Bad Request", "同一挑战必须只能用一次");
     }
 
@@ -425,7 +489,7 @@ mod tests {
         let fp = good_fp();
         let (bad_pow, _) = route("POST", "/v1/attest", &json!({
             "challenge_id": ch["challenge_id"], "nonce": "0", "fp": fp,
-        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(bad_pow, "400 Bad Request");
 
         let ch2 = challenge(&st);
@@ -434,7 +498,7 @@ mod tests {
         let nonce = solve_v(&ch2, &curl);
         let (s, _) = route("POST", "/v1/attest", &json!({
             "challenge_id": ch2["challenge_id"], "nonce": nonce, "fp": curl,
-        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(s, "403 Forbidden", "curl UA 应被拒");
 
         // 证据不足：ua 像浏览器，但只有 1 项环境（canvas），其余缺失
@@ -444,7 +508,7 @@ mod tests {
         let nonce3 = solve_v(&ch3, &sparse);
         let (s3, _) = route("POST", "/v1/attest", &json!({
             "challenge_id": ch3["challenge_id"], "nonce": nonce3, "fp": sparse,
-        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret", &counters());
         assert_eq!(s3, "403 Forbidden", "证据不足应被拒");
     }
 
@@ -453,20 +517,32 @@ mod tests {
         let st = store();
         let human = json!({"pointer":12,"keys":0,"corrections":1,"dwell_ms":9000,"video_ms":3000,"visible":true});
         let (_, a) = route("POST", "/v1/score", &json!({"fp": good_fp(), "telemetry": human}).to_string(),
-                           &peer("127.0.0.8"), &st, b"test-secret");
+                           &peer("127.0.0.8"), &st, b"test-secret", &counters());
         let (_, b) = route("POST", "/v1/score", &json!({"fp": good_fp(), "telemetry": {}}).to_string(),
-                           &peer("127.0.0.8"), &st, b"test-secret");
+                           &peer("127.0.0.8"), &st, b"test-secret", &counters());
         assert!(a["risk"].as_i64().unwrap() < b["risk"].as_i64().unwrap());
         assert_ne!(b["action"], "allow");
 
         // 同一个 IP 连续要 31 次挑战：第 31 次必须 429
         let mut codes = Vec::new();
         for _ in 0..31 {
-            let (s, _) = route("POST", "/v1/challenge", "", &peer("127.0.0.7"), &st, b"test-secret");
+            let (s, _) = route("POST", "/v1/challenge", "", &peer("127.0.0.7"), &st, b"test-secret", &counters());
             codes.push(s);
         }
         assert_eq!(codes.iter().filter(|s| **s == "200 OK").count(), 30);
         assert_eq!(codes.last().copied(), Some("429 Too Many Requests"));
+    }
+
+    #[test]
+    fn metrics_exposition() {
+        let store = Arc::new(Store::memory());
+        let c: SharedCounters = Arc::new(Counters::default());
+        c.challenges.fetch_add(2, Ordering::Relaxed);
+        c.attest_ok.fetch_add(1, Ordering::Relaxed);
+        let text = render_metrics(&c, &store);
+        assert!(text.contains("hhub_risk_challenges_total 2"), "{text}");
+        assert!(text.contains("hhub_risk_attest_total{result=\"ok\"} 1"), "{text}");
+        assert!(text.contains("backend=\"memory\""), "{text}");
     }
 
     #[test]
