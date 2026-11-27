@@ -60,8 +60,10 @@ jobs:
             sleep 0.25
           done
           echo "server did not start"; exit 1
-      - run: python3 server/tests/multi_instance.py
+      # 顺序很重要：multi_instance.py 会把同一 IP 的 challenge 额度打到 429，
+      # 所以先跑单实例冒烟，再跑多实例（它自己的断言包含 429）。
       - run: RISK_BASE=http://127.0.0.1:8091 RISK_SECRET=test-secret python3 server/tests/smoke.py
+      - run: python3 server/tests/multi_instance.py
 
   web:
     name: Web SDK (node --test)
@@ -71,7 +73,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test web/test/
+      - run: node --test web/test/*.test.mjs
 
   go:
     name: Go SDK
