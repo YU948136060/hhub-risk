@@ -28,6 +28,13 @@
 | 协议 | `/v1/challenge` `/v1/attest` `/v1/score` `/v1/verify` | ✅ 参考 server + OpenAPI（支持 Redis 共享挑战 + 按 IP 限流） |
 | 前端 | 零依赖 `hhub-risk.js` + React/Vue/WebComponent | ✅ 真浏览器端到端冒烟通过 |
 
+## 三分钟跑通（Docker）
+
+```bash
+docker compose up --build
+# 示例页 http://localhost:8092 —— 点一下按钮就能看到 token / risk / reasons
+```
+
 ## 仓库结构
 
 ```

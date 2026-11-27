@@ -24,6 +24,21 @@ python3 server/tests/multi_instance.py     # PASS=5
 - 限流：按 IP 固定窗口，`/v1/challenge` 30/min、`/v1/attest` 20/min，超限 429；
 - 没配 `RISK_REDIS` 时用内存（单实例/测试），启动日志会明确写"内存（单实例）"。
 
+## Docker / compose 三分钟跑通
+
+```bash
+docker compose up --build
+# 风控服务 http://localhost:8090/healthz
+# 示例页   http://localhost:8092  （页面 + /v1 反代 + 演示按钮）
+```
+
+`docker-compose.yml` 起三个容器：`redis`、`risk`（本服务，Redis 共享挑战）、
+`demo`（nginx：静态示例页 + `/v1` 反代）。
+
+> ⚠️ 本机实测：Dockerfile 与 compose 配置通过 `docker compose config` 校验，
+> 但镜像构建在这台机器上**没有跑完** —— 拉 `rust:1.83-slim` 只有约 16 KB/s（14MB 用了 ~15 分钟），
+> 属于网络限速，不是构建脚本问题。CI 或正常网络下 `docker compose up --build` 即可。
+
 ## 协议
 
 | 方法 | 路径 | 说明 |

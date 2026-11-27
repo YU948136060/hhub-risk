@@ -358,6 +358,117 @@ mod tests {
         assert_eq!(fp_evidence(&bare).0, 0);
     }
 
+    fn peer(ip: &str) -> SocketAddr {
+        format!("{ip}:1234").parse().unwrap()
+    }
+
+    fn store() -> SharedStore { Arc::new(Store::memory()) }
+
+    fn good_fp() -> Value {
+        json!({"ua":"Mozilla/5.0 Chrome/131","canvas":"d".repeat(64),
+               "webgl":"Google|ANGLE","raf":20,"raf_ms":333.0,
+               "screen":"1920x1080x24","tz":"Asia/Shanghai","lang":"zh-CN"})
+    }
+
+    fn challenge(store: &SharedStore) -> Value {
+        let (st, v) = route("POST", "/v1/challenge", "", &peer("127.0.0.9"), store, b"test-secret");
+        assert_eq!(st, "200 OK");
+        v
+    }
+
+    fn solve_v(ch: &Value, fp: &Value) -> String {
+        solve(
+            ch["challenge"].as_str().unwrap(),
+            ch["mix"].as_str().unwrap(),
+            fp["canvas"].as_str().unwrap(),
+            fp["raf_ms"].as_f64().unwrap(),
+        )
+    }
+
+    #[test]
+    fn contract_challenge_attest_happy_path() {
+        let st = store();
+        let ch = challenge(&st);
+        let fp = good_fp();
+        let nonce = solve_v(&ch, &fp);
+        let (status, out) = route("POST", "/v1/attest", &json!({
+            "challenge_id": ch["challenge_id"], "nonce": nonce, "fp": fp,
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(status, "200 OK", "{out}");
+        assert!(out["token"].as_str().unwrap().starts_with("v1."));
+        assert!(out["risk"].is_i64());
+        // token 可被 verify 端点验签
+        let token = out["token"].as_str().unwrap().to_string();
+        let (_, v) = route("GET", &format!("/v1/verify?token={token}"), "", &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(v["valid"], true);
+        let (_, bad) = route("GET", &format!("/v1/verify?token={token}x"), "", &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(bad["valid"], false);
+    }
+
+    #[test]
+    fn contract_challenge_is_one_time() {
+        let st = store();
+        let ch = challenge(&st);
+        let fp = good_fp();
+        let nonce = solve_v(&ch, &fp);
+        let body = json!({"challenge_id": ch["challenge_id"], "nonce": nonce, "fp": fp}).to_string();
+        let (s1, _) = route("POST", "/v1/attest", &body, &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(s1, "200 OK");
+        let (s2, _) = route("POST", "/v1/attest", &body, &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(s2, "400 Bad Request", "同一挑战必须只能用一次");
+    }
+
+    #[test]
+    fn contract_rejects_bad_pow_and_non_browser() {
+        let st = store();
+        let ch = challenge(&st);
+        let fp = good_fp();
+        let (bad_pow, _) = route("POST", "/v1/attest", &json!({
+            "challenge_id": ch["challenge_id"], "nonce": "0", "fp": fp,
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(bad_pow, "400 Bad Request");
+
+        let ch2 = challenge(&st);
+        let mut curl = good_fp();
+        curl["ua"] = json!("curl/8.5.0");
+        let nonce = solve_v(&ch2, &curl);
+        let (s, _) = route("POST", "/v1/attest", &json!({
+            "challenge_id": ch2["challenge_id"], "nonce": nonce, "fp": curl,
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(s, "403 Forbidden", "curl UA 应被拒");
+
+        // 证据不足：ua 像浏览器，但只有 1 项环境（canvas），其余缺失
+        let ch3 = challenge(&st);
+        let sparse = json!({"ua":"Mozilla/5.0 Chrome/131","canvas":"e".repeat(64),
+                            "raf":0,"raf_ms":0.0});
+        let nonce3 = solve_v(&ch3, &sparse);
+        let (s3, _) = route("POST", "/v1/attest", &json!({
+            "challenge_id": ch3["challenge_id"], "nonce": nonce3, "fp": sparse,
+        }).to_string(), &peer("127.0.0.9"), &st, b"test-secret");
+        assert_eq!(s3, "403 Forbidden", "证据不足应被拒");
+    }
+
+    #[test]
+    fn contract_score_and_rate_limit() {
+        let st = store();
+        let human = json!({"pointer":12,"keys":0,"corrections":1,"dwell_ms":9000,"video_ms":3000,"visible":true});
+        let (_, a) = route("POST", "/v1/score", &json!({"fp": good_fp(), "telemetry": human}).to_string(),
+                           &peer("127.0.0.8"), &st, b"test-secret");
+        let (_, b) = route("POST", "/v1/score", &json!({"fp": good_fp(), "telemetry": {}}).to_string(),
+                           &peer("127.0.0.8"), &st, b"test-secret");
+        assert!(a["risk"].as_i64().unwrap() < b["risk"].as_i64().unwrap());
+        assert_ne!(b["action"], "allow");
+
+        // 同一个 IP 连续要 31 次挑战：第 31 次必须 429
+        let mut codes = Vec::new();
+        for _ in 0..31 {
+            let (s, _) = route("POST", "/v1/challenge", "", &peer("127.0.0.7"), &st, b"test-secret");
+            codes.push(s);
+        }
+        assert_eq!(codes.iter().filter(|s| **s == "200 OK").count(), 30);
+        assert_eq!(codes.last().copied(), Some("429 Too Many Requests"));
+    }
+
     #[test]
     fn fingerprint_hash_is_stable() {
         let fp = json!({"canvas":"x","webgl":"y","screen":"1x1x24","tz":"t","lang":"l"});
