@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
@@ -88,38 +88,49 @@
     code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
   </style>
   <link rel="stylesheet" href="../style.css" />
-  
 </head>
-<body><nav style="max-width:860px;margin:0 auto;padding:16px 24px"><a href="../index.html" style="color:#e8b93c;text-decoration:none;font-weight:700">hhub-risk</a> <span style="color:#9da7b3;font-size:13px">/ 文档</span></nav>
-<header id="title-block-header" class="doc-title">
+<body><nav style="max-width:860px;margin:0 auto;padding:16px 24px;font:14px system-ui"><a href="/" style="color:#e8b93c;text-decoration:none;font-weight:700">hhub-risk</a> <span style="color:#9da7b3">/ docs</span><span style="float:right"><a href="/zh/docs/quickstart.html" style="color:#9da7b3">中文</a></span></nav>
+<header id="title-block-header">
 <h1 class="title">hhub-risk · quickstart</h1>
 </header>
-<h1 id="快速开始规划中">快速开始（规划中）</h1>
+<h1 id="quickstart">Quickstart</h1>
 <blockquote>
-<p>当前仓库只有
-<code>core/</code>；下面这份是<strong>目标形态</strong>，<code>server/</code>
-与 SDK 落地后按此执行。</p>
+<p>Right now the repo ships <code>core/</code>, <code>server/</code>,
+<code>web/</code> and five SDKs. The steps below are the intended
+integration shape.</p>
 </blockquote>
-<h2 id="1-起服务">1. 起服务</h2>
+<h2 id="1-run-the-server">1. Run the server</h2>
 <div class="sourceCode" id="cb1"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-p</span> 8080:8080 <span class="at">-e</span> RISK_SECRET=change-me ghcr.io/<span class="op">&lt;</span>org<span class="op">&gt;</span>/hhub-risk</span></code></pre></div>
-<h2 id="2-前端">2. 前端</h2>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Docker (server + Redis + demo page)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">--build</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># demo: http://localhost:8092    service: http://localhost:8090/healthz</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># …or from source</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="va">RISK_SECRET</span><span class="op">=</span>change-me <span class="ex">cargo</span> run <span class="at">-p</span> hhub-risk-server</span></code></pre></div>
+<p>Multi-instance (challenges must be shared):</p>
 <div class="sourceCode" id="cb2"><pre
-class="sourceCode html"><code class="sourceCode html"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">script</span><span class="ot"> src</span><span class="op">=</span><span class="st">&quot;https://risk.example.com/hhub-risk.js&quot;</span><span class="dt">&gt;&lt;/</span><span class="kw">script</span><span class="dt">&gt;</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">script</span><span class="dt">&gt;</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  HHubRisk<span class="op">.</span><span class="fu">mount</span>(<span class="st">&#39;#risk-slot&#39;</span><span class="op">,</span> { <span class="dt">endpoint</span><span class="op">:</span> <span class="st">&#39;https://risk.example.com&#39;</span> })<span class="op">;</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">script</span><span class="dt">&gt;</span></span></code></pre></div>
-<h2 id="3-后端go第一优先">3. 后端（Go，第一优先）</h2>
-<div class="sourceCode" id="cb3"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/&lt;org&gt;/hhub-risk-go&quot;</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>h <span class="op">:=</span> hhubrisk<span class="op">.</span>New<span class="op">(</span>hhubrisk<span class="op">.</span>Config<span class="op">{</span>Secret<span class="op">:</span> os<span class="op">.</span>Getenv<span class="op">(</span><span class="st">&quot;RISK_SECRET&quot;</span><span class="op">)})</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>http<span class="op">.</span>Handle<span class="op">(</span><span class="st">&quot;/&quot;</span><span class="op">,</span> h<span class="op">.</span>Protect<span class="op">(</span><span class="st">&quot;/login&quot;</span><span class="op">,</span> <span class="st">&quot;/register&quot;</span><span class="op">,</span> next<span class="op">))</span></span></code></pre></div>
-<h2 id="4-判定">4. 判定</h2>
-<p>服务端返回：</p>
-<div class="sourceCode" id="cb4"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span> <span class="dt">&quot;risk&quot;</span><span class="fu">:</span> <span class="dv">42</span><span class="fu">,</span> <span class="dt">&quot;action&quot;</span><span class="fu">:</span> <span class="st">&quot;challenge&quot;</span><span class="fu">,</span> <span class="dt">&quot;reasons&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;behavior:ok&quot;</span><span class="ot">,</span> <span class="st">&quot;tz_geo_mismatch:12h&quot;</span><span class="ot">]</span> <span class="fu">}</span></span></code></pre></div>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">RISK_REDIS</span><span class="op">=</span>redis://127.0.0.1:6379/0 <span class="va">RISK_SECRET</span><span class="op">=</span>change-me <span class="va">RISK_LISTEN</span><span class="op">=</span>127.0.0.1:8091 <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="ex">cargo</span> run <span class="at">-p</span> hhub-risk-server <span class="kw">&amp;</span></span></code></pre></div>
+<h2 id="2-frontend-three-lines">2. Frontend (three lines)</h2>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode html"><code class="sourceCode html"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">script</span><span class="ot"> src</span><span class="op">=</span><span class="st">&quot;/risk/hhub-risk.js&quot;</span><span class="dt">&gt;&lt;/</span><span class="kw">script</span><span class="dt">&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">script</span><span class="dt">&gt;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  HHubRisk<span class="op">.</span><span class="fu">init</span>({ <span class="dt">endpoint</span><span class="op">:</span> <span class="st">&#39;&#39;</span> })<span class="op">;</span>        <span class="co">// same origin; or https://risk.example.com</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">script</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>All following requests may use <code>HHubRisk.fetch()</code> — it
+attaches <code>X-HHub-Risk</code> automatically.</p>
+<h2 id="3-backend-go">3. Backend (Go)</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> hhubrisk <span class="st">&quot;github.com/YU948136060/hhub-risk/sdk/go&quot;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>handler <span class="op">:=</span> hhubrisk<span class="op">.</span>Middleware<span class="op">(</span>hhubrisk<span class="op">.</span>Config<span class="op">{</span>Secret<span class="op">:</span> secret<span class="op">,</span> DenyAtOrAbove<span class="op">:</span> <span class="dv">70</span><span class="op">})(</span>mux<span class="op">)</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>claims<span class="op">,</span> ok <span class="op">:=</span> hhubrisk<span class="op">.</span>FromContext<span class="op">(</span>r<span class="op">.</span>Context<span class="op">())</span></span></code></pre></div>
+<p>Python / Node / Java / PHP are symmetric — see
+<code>sdk/*/README.md</code>.</p>
+<h2 id="4-interpret-the-decision">4. Interpret the decision</h2>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span> <span class="dt">&quot;risk&quot;</span><span class="fu">:</span> <span class="dv">42</span><span class="fu">,</span> <span class="dt">&quot;action&quot;</span><span class="fu">:</span> <span class="st">&quot;challenge&quot;</span><span class="fu">,</span> <span class="dt">&quot;reasons&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;behavior:ok&quot;</span><span class="ot">,</span> <span class="st">&quot;tz_geo_mismatch:12h&quot;</span><span class="ot">]</span> <span class="fu">}</span></span></code></pre></div>
 <p><code>action</code> ∈
-<code>allow | challenge | step_up | deny</code>，阈值见
-<code>core::decide</code>。</p>
+<code>allow | challenge | step_up | deny</code>; thresholds live in
+<code>core::decide</code> and can be tuned by the host application.</p>
 </body>
 </html>

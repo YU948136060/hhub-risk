@@ -26,6 +26,8 @@ ROUTES = {
     "/design.html": "docs/design.html",
     "/quickstart.html": "docs/quickstart.html",
     "/docs/": "docs/design.html",
+    "/zh/": "zh/index.html",
+    "/zh/index.html": "zh/index.html",
 }
 
 
@@ -52,8 +54,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         rel = ROUTES.get(path)
-        if rel is None and path.startswith("/docs/") and path.endswith(".html"):
-            rel = path.lstrip("/")          # docs/design.html 之类直接映射
+        if rel is None and (path.startswith("/docs/") or path.startswith("/zh/")) and path.endswith(".html"):
+            rel = path.lstrip("/")          # docs/design.html、zh/docs/… 直接映射
         if rel is None and path.startswith("/static/"):
             rel = path.lstrip("/")
         if rel is None and os.path.splitext(path)[1] in (".css", ".js", ".svg", ".png", ".ico", ".txt"):

@@ -1,37 +1,53 @@
-# 快速开始（规划中）
+# Quickstart
 
-> 当前仓库只有 `core/`；下面这份是**目标形态**，`server/` 与 SDK 落地后按此执行。
+> Right now the repo ships `core/`, `server/`, `web/` and five SDKs.
+> The steps below are the intended integration shape.
 
-## 1. 起服务
+## 1. Run the server
 
 ```bash
-docker run -p 8080:8080 -e RISK_SECRET=change-me ghcr.io/<org>/hhub-risk
+# Docker (server + Redis + demo page)
+docker compose up --build
+# demo: http://localhost:8092    service: http://localhost:8090/healthz
+
+# …or from source
+RISK_SECRET=change-me cargo run -p hhub-risk-server
 ```
 
-## 2. 前端
+Multi-instance (challenges must be shared):
+
+```bash
+RISK_REDIS=redis://127.0.0.1:6379/0 RISK_SECRET=change-me RISK_LISTEN=127.0.0.1:8091 \
+  cargo run -p hhub-risk-server &
+```
+
+## 2. Frontend (three lines)
 
 ```html
-<script src="https://risk.example.com/hhub-risk.js"></script>
+<script src="/risk/hhub-risk.js"></script>
 <script>
-  HHubRisk.mount('#risk-slot', { endpoint: 'https://risk.example.com' });
+  HHubRisk.init({ endpoint: '' });        // same origin; or https://risk.example.com
 </script>
 ```
 
-## 3. 后端（Go，第一优先）
+All following requests may use `HHubRisk.fetch()` — it attaches `X-HHub-Risk` automatically.
+
+## 3. Backend (Go)
 
 ```go
-import "github.com/<org>/hhub-risk-go"
+import hhubrisk "github.com/YU948136060/hhub-risk/sdk/go"
 
-h := hhubrisk.New(hhubrisk.Config{Secret: os.Getenv("RISK_SECRET")})
-http.Handle("/", h.Protect("/login", "/register", next))
+handler := hhubrisk.Middleware(hhubrisk.Config{Secret: secret, DenyAtOrAbove: 70})(mux)
+claims, ok := hhubrisk.FromContext(r.Context())
 ```
 
-## 4. 判定
+Python / Node / Java / PHP are symmetric — see `sdk/*/README.md`.
 
-服务端返回：
+## 4. Interpret the decision
 
 ```json
 { "risk": 42, "action": "challenge", "reasons": ["behavior:ok", "tz_geo_mismatch:12h"] }
 ```
 
-`action` ∈ `allow | challenge | step_up | deny`，阈值见 `core::decide`。
+`action` ∈ `allow | challenge | step_up | deny`; thresholds live in `core::decide`
+and can be tuned by the host application.

@@ -1,0 +1,43 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hhub-risk · 自托管风控层</title>
+<link rel="stylesheet" href="../style.css"></head>
+<body>
+<header><a href="index.html">hhub-risk</a>
+  <span class="tag">自托管风控层 · 后端 AGPL-3.0 / SDK Apache-2.0</span>
+  <span style="margin-left:auto"><a href="../index.html">English</a></span></header>
+<main>
+<h1>给自托管社交平台的<b>风控层</b></h1>
+<p>不是又一个验证码：它把<b>浏览器见证</b>、<b>行为评分</b>、<b>IP 地理一致性</b>和<b>可插拔验证码</b>
+放在一条链路上，判定全部在服务端。数据不出你自己的服务器。</p>
+
+<div class="grid">
+  <div class="card"><span class="badge">L1</span><h3>浏览器见证</h3>
+    <p>canvas / WebGL / rAF 时序 + UA 一致性，PoW 绑定浏览器熵：协议脚本拿不到题。</p></div>
+  <div class="card"><span class="badge">L2</span><h3>行为评分</h3>
+    <p>指针/触摸/按键/停留/改选/视频 → 0~100 分；键盘用户与移动端不误伤。</p></div>
+  <div class="card"><span class="badge">L3</span><h3>网络与地理</h3>
+    <p>IP 归属地 vs 声称时区/语言；只有长期矛盾才加分，不因“人在国外”直接判风险。</p></div>
+  <div class="card"><span class="badge">L5</span><h3>账号与会话</h3>
+    <p>新设备、无主设备会话、无痕模式：无痕注册要求邮箱验证码作为找回路径。</p></div>
+</div>
+
+<h2>白箱也能有效</h2>
+<ul>
+  <li>判定在服务端，客户端只能采集，改不了分数；</li>
+  <li>规则 id 与阈值开源，可解释、可关；<b>历史画像与密钥不发布</b>；</li>
+  <li>PoW 绑定浏览器熵，同一份解不能换指纹复用。</li>
+</ul>
+
+<h2>文档</h2>
+<ul>
+  <li><a href="docs/design.html">设计</a> · <a href="../docs/design.html">Design（English）</a></li>
+  <li><a href="docs/quickstart.html">快速开始</a> · <a href="../docs/quickstart.html">Quickstart（English）</a></li>
+</ul>
+
+<h2>许可证</h2>
+<p>后端（<code>core/</code>、<code>server/</code>）<b>AGPL-3.0</b>；前端与 SDK <b>Apache-2.0</b>。
+两者兼容，SDK 是独立进程的 HTTP 客户端，不构成衍生作品。</p>
+</main>
+<footer>hhub-risk · <a href="docs/design.html">设计</a> · <a href="https://github.com/YU948136060/hhub-risk">GitHub</a></footer>
+</body></html>

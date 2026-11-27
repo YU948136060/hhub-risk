@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
@@ -21,442 +21,158 @@
       vertical-align: middle;
     }
     .display.math{display: block; text-align: center; margin: 0.5rem auto;}
-    /* CSS for syntax highlighting */
-    html { -webkit-text-size-adjust: 100%; }
-    pre > code.sourceCode { white-space: pre; position: relative; }
-    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-    pre > code.sourceCode > span:empty { height: 1.2em; }
-    .sourceCode { overflow: visible; }
-    code.sourceCode > span { color: inherit; text-decoration: inherit; }
-    div.sourceCode { margin: 1em 0; }
-    pre.sourceCode { margin: 0; }
-    @media screen {
-    div.sourceCode { overflow: auto; }
-    }
-    @media print {
-    pre > code.sourceCode { white-space: pre-wrap; }
-    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-    }
-    pre.numberSource code
-      { counter-reset: source-line 0; }
-    pre.numberSource code > span
-      { position: relative; left: -4em; counter-increment: source-line; }
-    pre.numberSource code > span > a:first-child::before
-      { content: counter(source-line);
-        position: relative; left: -1em; text-align: right; vertical-align: baseline;
-        border: none; display: inline-block;
-        -webkit-touch-callout: none; -webkit-user-select: none;
-        -khtml-user-select: none; -moz-user-select: none;
-        -ms-user-select: none; user-select: none;
-        padding: 0 4px; width: 4em;
-        color: #aaaaaa;
-      }
-    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
-    div.sourceCode
-      {   }
-    @media screen {
-    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-    }
-    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
-    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
-    code span.at { color: #7d9029; } /* Attribute */
-    code span.bn { color: #40a070; } /* BaseN */
-    code span.bu { color: #008000; } /* BuiltIn */
-    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
-    code span.ch { color: #4070a0; } /* Char */
-    code span.cn { color: #880000; } /* Constant */
-    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
-    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
-    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
-    code span.dt { color: #902000; } /* DataType */
-    code span.dv { color: #40a070; } /* DecVal */
-    code span.er { color: #ff0000; font-weight: bold; } /* Error */
-    code span.ex { } /* Extension */
-    code span.fl { color: #40a070; } /* Float */
-    code span.fu { color: #06287e; } /* Function */
-    code span.im { color: #008000; font-weight: bold; } /* Import */
-    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
-    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
-    code span.op { color: #666666; } /* Operator */
-    code span.ot { color: #007020; } /* Other */
-    code span.pp { color: #bc7a00; } /* Preprocessor */
-    code span.sc { color: #4070a0; } /* SpecialChar */
-    code span.ss { color: #bb6688; } /* SpecialString */
-    code span.st { color: #4070a0; } /* String */
-    code span.va { color: #19177c; } /* Variable */
-    code span.vs { color: #4070a0; } /* VerbatimString */
-    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
   </style>
   <link rel="stylesheet" href="../style.css" />
-  
 </head>
-<body><nav style="max-width:860px;margin:0 auto;padding:16px 24px"><a href="../index.html" style="color:#e8b93c;text-decoration:none;font-weight:700">hhub-risk</a> <span style="color:#9da7b3;font-size:13px">/ 文档</span></nav>
-<header id="title-block-header" class="doc-title">
+<body><nav style="max-width:860px;margin:0 auto;padding:16px 24px;font:14px system-ui"><a href="/" style="color:#e8b93c;text-decoration:none;font-weight:700">hhub-risk</a> <span style="color:#9da7b3">/ docs</span><span style="float:right"><a href="/zh/docs/design.html" style="color:#9da7b3">中文</a></span></nav>
+<header id="title-block-header">
 <h1 class="title">hhub-risk · design</h1>
 </header>
-<h1 id="风控系统设计--开源接入草案-2026-11-24">风控系统：设计 +
-开源接入（草案 2026-11-24）</h1>
+<h1 id="design">Design</h1>
 <blockquote>
-<p>目标（用户原话归纳）：</p>
-<ol type="1">
-<li>不只判断"是不是人"，还要判断<strong>这次访问对本站有没有风险</strong>；</li>
-<li>白箱开源（<strong>AGPL v3</strong>）也要有效；</li>
-<li><strong>接入必须非常轻松</strong>：多种后端语言 +
-多种前端框架，简单几行接上原生 JS；</li>
-<li>无痕模式是真实痛点：<strong>无 session 时不要在无痕里注册出 master
-session</strong>。</li>
-</ol>
-<p>本文是设计与取舍记录，代码落地按 §9
-的里程碑推进。当前已上线的部分（浏览器见证 + 行为评分）见 <a
-href="9-人机验证-浏览器见证与行为风控.md"><code>9-人机验证-浏览器见证与行为风控.md</code></a>。</p>
+<p>Generic layer: <strong>browser attestation + behaviour scoring +
+network/geo consistency + pluggable captcha</strong>. All decisions
+happen on the server; the client only collects signals.</p>
 </blockquote>
-<hr />
-<h2 id="1-分层把信号和决策分开">1. 分层：把"信号"和"决策"分开</h2>
-<pre><code>浏览器 SDK (hhub-risk.js)                服务端 (risk-core)
+<h2 id="1-layers">1. Layers</h2>
+<pre><code>browser SDK                             risk server
 ┌──────────────────────────┐            ┌───────────────────────────────┐
-│ L1 环境：canvas/WebGL/rAF │            │ ① 校验 PoW（绑定浏览器熵）      │
-│     UA/屏幕/时区/语言      │  ──►       │ ② 打分：L1~L5 → risk 0..100    │
-│ L2 行为：指针/触摸/按键/  │  attest    │ ③ 决策：allow / challenge /    │
-│     停留/改选/看视频      │  ──►       │        deny / need-email-code  │
-│ L3 网络：交给服务端看 IP   │            │ ④ 记忆：指纹/IP/账号 的历史     │
+│ L1 env: canvas/WebGL/rAF │            │ ① verify PoW (bound to entropy)│
+│    UA / screen / tz/lang │  ──►       │ ② score L1..L5 → risk 0..100   │
+│ L2 behaviour: pointer/   │  attest    │ ③ decide: allow / challenge /  │
+│    touch/keys/dwell/video│  ──►       │        step_up / deny          │
+│ L3 network: server-side  │            │ ④ remember (fingerprint/IP)    │
 └──────────────────────────┘            └───────────────────────────────┘</code></pre>
-<p><strong>关键原则</strong>：客户端只负责<strong>采集</strong>（可伪造，所以只当"降价信号"）；一切<strong>判定</strong>在服务端；
-服务端所有阈值都写进配置与文档，白箱也能看懂，但<strong>改不了</strong>判定权。</p>
-<hr />
-<h2 id="2-信号清单现在有哪些还要哪些">2.
-信号清单（现在有哪些、还要哪些）</h2>
+<p>Principle: the client only <strong>collects</strong> (everything can
+be forged, so it only adds friction); every decision is server-side.
+Rules and thresholds are documented — white-box, still effective.</p>
+<h2 id="2-signals">2. Signals</h2>
 <table>
 <thead>
 <tr>
-<th>层</th>
-<th>信号</th>
-<th>现状</th>
-<th>用途</th>
+<th>Layer</th>
+<th>Signal</th>
+<th>Use</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>L1</td>
-<td>canvas 光栅化哈希、WebGL vendor/renderer、rAF
-时序、屏幕、时区、语言、UA 一致性</td>
-<td>✅ 已上线</td>
-<td>区分"浏览器 / 协议脚本"；指纹分桶限流</td>
+<td>canvas raster hash, WebGL vendor/renderer, rAF timing, screen,
+timezone, language, UA consistency</td>
+<td>tell browsers from protocol clients; fingerprint buckets</td>
 </tr>
 <tr>
 <td>L1</td>
-<td><strong>无痕模式</strong>（见 §4）</td>
-<td>⬜ 待做</td>
-<td>阻止无 session 的无痕注册</td>
+<td>private/incognito heuristics</td>
+<td>gate master-session creation (email step-up)</td>
 </tr>
 <tr>
 <td>L2</td>
-<td>指针/触摸/按键、停留、改选、视频观看</td>
-<td>✅ 已上线</td>
-<td>区分"人 / 自动化"</td>
+<td>pointer/touch/keys, dwell, corrections, video watched</td>
+<td>tell humans from automation</td>
 </tr>
 <tr>
 <td>L3</td>
-<td>IP → 国家/省/市（<code>session::lookup_geo</code>，Redis 缓存 30
-天，ip-api.com）</td>
-<td>✅ 已有能力</td>
-<td>地域风险</td>
-</tr>
-<tr>
-<td>L3</td>
-<td>时区 ↔︎ IP 地理的一致性（如
-IP=美国、<code>tz=Asia/Shanghai</code>）</td>
-<td>⬜ 待做</td>
-<td>代理识别</td>
-</tr>
-<tr>
-<td>L3</td>
-<td>语言 ↔︎ IP 地理（<code>Accept-Language: zh-CN</code> + IP
-在美国）</td>
-<td>⬜ 待做</td>
-<td>代理识别（弱信号）</td>
-</tr>
-<tr>
-<td>L3</td>
-<td>代理头/机房 ASN/UA 异常</td>
-<td>部分（<code>ip_quality</code>）</td>
-<td>低质 IP → 加 PoW</td>
+<td>IP → country/city (cached); timezone ↔︎ IP-country mismatch; language
+↔︎ geo</td>
+<td>proxy detection (weak signal only)</td>
 </tr>
 <tr>
 <td>L4</td>
-<td>历史：同指纹/同 IP 的请求节奏、活跃时段、通过率、失败率</td>
-<td>部分（配额/失败计数）</td>
-<td>长期画像</td>
-</tr>
-<tr>
-<td>L4</td>
-<td><strong>"声称时区"与"实际活跃时段"的长期矛盾</strong>（见 §3）</td>
-<td>⬜ 待做</td>
-<td>用户设想的极端场景</td>
+<td>per-fingerprint history: rhythm, subnet/country rotation, template
+reuse, post-signup burst</td>
+<td>long-term profiling (site-specific rules, not open source)</td>
 </tr>
 <tr>
 <td>L5</td>
-<td>新设备 / 无主设备会话 / 会话时长 / 账号年龄</td>
-<td>部分（第 15 条 2FA）</td>
-<td>账号风险</td>
+<td>new device, no primary session</td>
+<td>account-level risk</td>
 </tr>
 </tbody>
 </table>
-<hr />
-<h2 id="3-用户设想的场景怎么落地">3. 用户设想的场景，怎么落地</h2>
-<blockquote>
-<p>「中国人用美国节点访问，但活跃在美国时间的白天，而且多天反应迟钝 ⇒
-很可能白天在用代理。」</p>
-</blockquote>
-<p>可计算化：</p>
-<ol type="1">
-<li>每次请求记录
-<code>(指纹, IP, geo, utc_hour, tz_claimed, tz_offset)</code>；</li>
-<li>定义
-<strong><code>tz_ip_mismatch</code></strong>：<code>|utc_offset(claimed_tz) - utc_offset(geo_tz)| ≥ 4h</code>；</li>
-<li>定义
-<strong><code>active_in_geo_daytime</code></strong>：该指纹的请求里有
-≥60% 落在 <code>geo</code> 当地 08:00–20:00；</li>
-<li>组合规则（示例，阈值可配）：
-<ul>
-<li><code>mismatch</code> 且 <code>active_in_geo_daytime</code> 且
-<code>mismatch_days ≥ 3</code> ⇒ <strong>risk +35</strong>；</li>
-<li><code>mismatch</code> 单日 ⇒ +10（可能只是出差/旅行）；</li>
-<li><code>claimed tz</code> 与该用户<strong>历史稳定 tz</strong> 不同 ⇒
-+15（换城市/换代理）。</li>
-</ul></li>
-<li>决策：risk ≥ 70 → 要求额外验证（邮箱码/更高难度 PoW）；≥ 85 →
-拒绝并提示。</li>
-<li><strong>不做的事</strong>：不因为"IP
-在美国"就直接判定风险（留学生、出差、VPN 都是正常需求），
-只看"长期、系统性的自相矛盾"。</li>
-</ol>
-<blockquote>
-<p>需要的数据：一张按指纹聚合的日表（Redis Hash / PG
-表），字段：<code>tz_hist</code>, <code>geo_hist</code>,
-<code>hour_hist[24]</code>, <code>mismatch_days</code>,
-<code>last_seen</code>。这属于"风控画像"，<strong>不存内容、只存计数</strong>。</p>
-</blockquote>
-<hr />
-<h2 id="4-无痕模式能做多少怎么做">4. 无痕模式：能做多少、怎么做</h2>
-<p><strong>坏消息</strong>：浏览器<strong>没有</strong>标准的
-<code>isIncognito()</code>。所有方法都是启发式，且会误伤 （Firefox
-隐私窗口、Brave、Safari 隐私浏览各不相同）。</p>
-<p><strong>可用的启发式</strong>（组合使用，只在"高度确信"时才拦）：</p>
-<table>
-<thead>
-<tr>
-<th>信号</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>navigator.storage.estimate()</code> 配额异常小</td>
-<td>Chrome 无痕的配额明显小于普通模式（经验值，需实测校准）</td>
-</tr>
-<tr>
-<td>IndexedDB / CacheStorage 写入后立即不可用</td>
-<td>部分隐私模式禁用</td>
-</tr>
-<tr>
-<td><code>webkitTemporaryStorage</code> 存在但配额为 0</td>
-<td>老 Safari 隐私模式</td>
-</tr>
-<tr>
-<td>首次访问就把 <code>localStorage</code> 判为"已满"</td>
-<td>某些模式下写入即拒</td>
-</tr>
-<tr>
-<td><code>navigator.storage.persisted()</code> 恒 false</td>
-<td>弱信号，普通模式也常见</td>
-</tr>
-</tbody>
-</table>
-<p><strong>建议的三种档位</strong>（需要用户拍板）：</p>
-<table>
-<thead>
-<tr>
-<th>档</th>
-<th>行为</th>
-<th>风险</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>A（严格，用户原话）</td>
-<td>判定为无痕 + 无 session ⇒ <strong>禁止注册 / 禁止创建 master
-session</strong>，并给出提示</td>
-<td>误伤 Firefox/Brave 隐私窗口的正常用户</td>
-</tr>
-<tr>
-<td>B（推荐）</td>
-<td>判定为无痕 ⇒ <strong>警告 +
-要求邮箱验证码</strong>（或显示一次性恢复码）后才允许创建 master
-session</td>
-<td>多一步操作，但"无痕关了也能找回"</td>
-</tr>
-<tr>
-<td>C（最松）</td>
-<td>只警告、不拦</td>
-<td>用户的恐惧（会话丢失）依然存在</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>无论哪档，<strong>必须</strong>给一条找回路径（邮箱验证码 /
-恢复码），否则用户真的会很痛苦。
-另外：<code>Secure</code>/<code>SameSite</code> 之外，给 master session
-cookie 设置合理 <code>Max-Age</code> 并
-<strong>在注册成功页明确告知"不要在无痕窗口注册"</strong>，比什么检测都管用。</p>
-</blockquote>
-<hr />
-<h2 id="5-打分与决策">5. 打分与决策</h2>
-<pre class="text"><code>risk = 基础分(50)
-     + Σ 规则加分（每条带 id、可解释、可关）
-     - Σ 可信减分（长期稳定指纹/稳定 geo/多次通过）
-clamp(0, 100)
+<h2 id="3-scoring--decisions">3. Scoring &amp; decisions</h2>
+<pre><code>risk = 50 + Σ rule scores − Σ trust bonuses      (clamped 0..100)
 
 risk &lt; 30   → allow
-30..69      → challenge（当前验证码；低分再加 PoW 难度）
-70..84      → challenge + 要求邮箱码（step-up）
-≥ 85        → deny（给明确文案 + 申诉入口）</code></pre>
-<p><strong>可解释性</strong>：每次决策返回
-<code>reasons: ["tz_ip_mismatch", "incognito_suspected", ...]</code>，
-既方便运营排查，也让开源用户能自己改规则。</p>
-<hr />
-<h2 id="6-开源接入agpl-v3">6. 开源接入（AGPL v3）</h2>
-<h3 id="61-仓库结构计划">6.1 仓库结构（计划）</h3>
-<pre><code>risk/
-  core/            # Rust：信号打分/决策/存储（可独立 crate）
-  server/          # 参考 HTTP 服务（axum）+ OpenAPI
-  web/
-    hhub-risk.js   # 零依赖原生 JS（UMD + ESM 双产物），约 30KB
-    adapters/      # react/ vue/ svelte/ web-component（都是薄壳）
-  sdk/
-    node/ python/ go/ php/ java/   # 各 200 行左右的中间件 + 示例
-  examples/
-  LICENSE          # AGPL-3.0</code></pre>
-<h3 id="62-稳定-http-契约任何后端都能实现对接">6.2 稳定 HTTP
-契约（任何后端都能实现/对接）</h3>
+30..69      → challenge   (captcha; low score may raise PoW difficulty)
+70..84      → step_up     (email code)
+≥ 85        → deny</code></pre>
+<p>Every decision returns <code>reasons</code> (rule ids + facts), so
+operators and white-box users can audit and tune.</p>
+<h2 id="4-pow-bound-to-browser-entropy">4. PoW bound to browser
+entropy</h2>
+<pre><code>material = challenge | mix | canvas | round(raf_ms*10)
+sha256(material + nonce) has `difficulty` leading zero hex digits</code></pre>
+<p>Consequences: a solved PoW cannot be replayed with another
+fingerprint; bots must recompute per spoofed fingerprint. (Difficulty 3
+⇒ ~4k hashes; measured: 51–204 ms in a real browser.)</p>
+<h2 id="5-private--incognito-windows-plan-b">5. Private / incognito
+windows (plan B)</h2>
+<p>Browsers expose no standard <code>isIncognito()</code>. Strong
+heuristics only: localStorage write failure, missing IndexedDB,
+<code>webkitTemporaryStorage</code> quota 0,
+<code>storage.estimate().quota &lt; 50MB</code>.</p>
+<ul>
+<li>registration still requires an email code (recovery path
+exists);</li>
+<li>login <strong>without a primary session and without 2FA</strong> →
+email step-up before creating a master session;</li>
+<li>login with 2FA → existing TOTP step-up.</li>
+</ul>
+<h2 id="6-integration-contract">6. Integration contract</h2>
 <table>
 <thead>
 <tr>
-<th>方法</th>
-<th>路径</th>
-<th>说明</th>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>POST</td>
 <td><code>/v1/challenge</code></td>
-<td>发挑战：<code>{challenge_id, challenge, mix, difficulty}</code></td>
+<td>issue <code>{challenge_id, challenge, mix, difficulty}</code> (120
+s, single use)</td>
 </tr>
 <tr>
 <td>POST</td>
 <td><code>/v1/attest</code></td>
-<td>交 PoW + 环境：<code>{challenge_id, nonce, fp}</code> →
-<code>{token, ttl}</code>（HMAC 签名）</td>
+<td>verify bound PoW + environment evidence →
+<code>{token, ttl, risk, reasons}</code></td>
 </tr>
 <tr>
 <td>POST</td>
 <td><code>/v1/score</code></td>
-<td>交行为遥测 → <code>{risk, reasons, action}</code></td>
+<td>behaviour telemetry → <code>{risk, action, reasons}</code></td>
 </tr>
 <tr>
-<td>POST</td>
-<td><code>/v1/verify</code></td>
-<td>校验 token（供业务后端调用，含 IP/geo 上下文）</td>
+<td>GET</td>
+<td><code>/v1/verify?token=</code></td>
+<td>local signature verification</td>
 </tr>
 </tbody>
 </table>
-<p>Token 用 HMAC-SHA256
-签名，<strong>任何语言都能本地验签</strong>，不需要回调。</p>
-<h3 id="63-前端接入三行">6.3 前端接入（三行）</h3>
-<div class="sourceCode" id="cb4"><pre
-class="sourceCode html"><code class="sourceCode html"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">script</span><span class="ot"> src</span><span class="op">=</span><span class="st">&quot;/risk/hhub-risk.js&quot;</span><span class="dt">&gt;&lt;/</span><span class="kw">script</span><span class="dt">&gt;</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">script</span><span class="dt">&gt;</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  HHubRisk<span class="op">.</span><span class="fu">mount</span>(<span class="st">&#39;#risk-slot&#39;</span><span class="op">,</span> { <span class="dt">endpoint</span><span class="op">:</span> <span class="st">&#39;/risk&#39;</span> })<span class="op">;</span>   <span class="co">// 自动接管表单提交</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">script</span><span class="dt">&gt;</span></span></code></pre></div>
-<p>框架薄壳：</p>
-<div class="sourceCode" id="cb5"><pre
-class="sourceCode jsx"><code class="sourceCode javascriptreact"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">&lt;HHubRisk</span> <span class="ot">endpoint</span><span class="op">=</span><span class="st">&quot;/risk&quot;</span> <span class="ot">onVerified</span><span class="op">=</span><span class="va">{</span><span class="op">...</span><span class="va">}</span> <span class="fu">/&gt;</span>                    <span class="co">// React</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">&lt;hhub-risk</span> <span class="ot">endpoint</span><span class="op">=</span><span class="st">&quot;/risk&quot;</span> <span class="er">@verified=&quot;...&quot;&gt;&lt;/hhub-risk</span><span class="fu">&gt;</span>          // Vue / Web Component</span></code></pre></div>
-<h3 id="64-后端接入以-express-为例">6.4 后端接入（以 Express 为例）</h3>
-<div class="sourceCode" id="cb6"><pre class="sourceCode js"><code class="sourceCode javascript"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>app<span class="op">.</span><span class="fu">use</span>(HHubRisk<span class="op">.</span><span class="fu">middleware</span>({ <span class="dt">endpoint</span><span class="op">:</span> <span class="st">&#39;/risk&#39;</span><span class="op">,</span> <span class="dt">protect</span><span class="op">:</span> [<span class="st">&#39;/login&#39;</span><span class="op">,</span> <span class="st">&#39;/register&#39;</span>] }))<span class="op">;</span></span></code></pre></div>
-<p>Python（FastAPI/Flask 中间件）、Go（<code>http.Handler</code>
-包装）、PHP（前置 filter）、 Java（Servlet
-Filter）形态一致：<strong>读取 <code>X-HHub-Risk</code> 请求头 →
-本地验签 → 得到风险分与决策</strong>。</p>
-<h3 id="65-白箱也要有效靠什么">6.5 白箱也要有效：靠什么</h3>
-<ol type="1">
-<li>判定在服务端，客户端只能采集，<strong>改不了分数</strong>；</li>
-<li>PoW 绑定浏览器熵（已实现）：换指纹/换会话都要重算；</li>
-<li>历史画像（L4）在服务端，攻击者看不到自己的画像，也就无法"对着规则调参"；</li>
-<li>阈值、规则 id 开源，但<strong>历史数据、IP 库、密钥</strong>不开源
-—— 这是"白箱≠全透明"的分界线。</li>
-</ol>
-<hr />
-<h2 id="7-与现有代码的关系">7. 与现有代码的关系</h2>
+<p>Tokens:
+<code>v1.&lt;b64url(payload)&gt;.&lt;b64url(hmac_sha256(secret, payload))&gt;</code>
+— any language can verify locally; the five SDKs share one
+cross-language test vector.</p>
+<h2 id="7-licensing">7. Licensing</h2>
 <ul>
-<li>现有
-<code>captcha_attest</code>（见证）、<code>captcha_risk</code>（行为评分）、<code>session::lookup_geo</code>（地理）
-正好对应 L1/L2/L3 的雏形，可以直接演进成 <code>risk/core</code>；</li>
-<li>第 15 条已经有的"设备待审批 / 主设备"概念，是 L5
-的基础，不需要另起炉灶。</li>
+<li><code>core/</code>, <code>server/</code>:
+<strong>AGPL-3.0</strong>;</li>
+<li><code>web/</code>, <code>sdk/*</code>: <strong>Apache-2.0</strong>
+(independent HTTP clients, no linking).</li>
 </ul>
-<hr />
-<h2 id="8-未决问题需要拍板">8. 未决问题（需要拍板）</h2>
-<ol type="1">
-<li><strong>无痕档位</strong>：A 严格禁止 / B 警告+邮箱码（推荐）/ C
-只警告？</li>
-<li><strong>IP 地理数据源</strong>：继续
-ip-api.com（简单、有速率限制、境外），还是内置
-<code>ip2region</code>/MaxMind （离线、无外呼、可商用授权要确认）？</li>
-<li><strong>SDK 优先级</strong>：Node + Python + Go 先行？PHP/Java
-之后？</li>
-<li><strong>仓库形态</strong>：现在就把 <code>risk/</code> 抽成独立
-crate/目录（便于将来单独发 AGPL 仓库）， 还是先长在
-<code>hhub-server</code> 里、开源时再抽？</li>
-</ol>
-<hr />
-<h2 id="9-里程碑">9. 里程碑</h2>
-<table>
-<thead>
-<tr>
-<th>#</th>
-<th>内容</th>
-<th>状态</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>M1</td>
-<td>L1+L2：浏览器见证 + 行为评分 + 绑定熵的 PoW</td>
-<td>✅ 已完成</td>
-</tr>
-<tr>
-<td>M2</td>
-<td>L3：时区/IP/语言一致性 + <code>reasons</code> 可解释输出</td>
-<td>⬜ 下一轮</td>
-</tr>
-<tr>
-<td>M3</td>
-<td>L4：指纹/IP 日表 + 长期矛盾规则（§3）</td>
-<td>⬜</td>
-</tr>
-<tr>
-<td>M4</td>
-<td>无痕检测 + 注册闸门（按 §4 选中档位）</td>
-<td>⬜</td>
-</tr>
-<tr>
-<td>M5</td>
-<td>抽 <code>risk/</code> + HTTP 契约 + 前端 JS + 3 个后端 SDK + AGPL
-头</td>
-<td>⬜</td>
-</tr>
-</tbody>
-</table>
+<h2 id="8-boundaries">8. Boundaries</h2>
+<ul>
+<li>Does <strong>not</strong> stop a full browser automation stack
+(Playwright). Behaviour signals raise the cost only.</li>
+<li>Do not judge "IP is abroad" as risk by itself; only long-term,
+systematic contradictions.</li>
+<li>Site-specific social-platform rules stay out of this repository;
+only the <code>Rule</code> trait and scenario hints are published.</li>
+</ul>
 </body>
 </html>
