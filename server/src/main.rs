@@ -49,8 +49,60 @@ struct Counters {
     attest_rejected: [AtomicU64; 5],
     /// 决策分布：allow / challenge / step_up / deny
     decision: [AtomicU64; 4],
+    /// 进程启动时间（Unix 秒），`/v1/stats` 的 uptime 用
+    started_unix: AtomicU64,
 }
 type SharedCounters = Arc<Counters>;
+
+impl Counters {
+    fn new() -> Self {
+        Counters {
+            started_unix: AtomicU64::new(now_secs().max(0) as u64),
+            ..Default::default()
+        }
+    }
+}
+
+/// `/v1/stats`：与 `/metrics` 同源，但给"抓不了 Prometheus"的场景一份 JSON。
+///
+/// ⚠️ 参考实现不鉴权；生产必须把它放到反代后面（或只绑回环），
+/// 与 `/metrics` 一样按内部端点对待。
+fn render_stats(c: &SharedCounters, store: &SharedStore) -> Value {
+    let rej = |i: usize| c.attest_rejected[i].load(Ordering::Relaxed);
+    let dec = |i: usize| c.decision[i].load(Ordering::Relaxed);
+    let ok = c.attest_ok.load(Ordering::Relaxed);
+    let failed = c.attest_bad.load(Ordering::Relaxed);
+    let total = ok + failed;
+    let rate = if total > 0 { (ok as f64) * 1000.0 / total as f64 } else { 0.0 };
+    let uptime = (now_secs().max(0) as u64).saturating_sub(c.started_unix.load(Ordering::Relaxed));
+    json!({
+        "uptime_seconds": uptime,
+        "store": store.backend(),
+        "counters": {
+            "challenges": c.challenges.load(Ordering::Relaxed),
+            "attest_ok": ok,
+            "attest_failed": failed,
+            "attest_rejected": {
+                "expired": rej(0), "non_browser": rej(1), "bad_pow": rej(2),
+                "weak_evidence": rej(3), "other": rej(4),
+            },
+            "decision": {
+                "allow": dec(0), "challenge": dec(1), "step_up": dec(2), "deny": dec(3),
+            },
+            "score": c.score.load(Ordering::Relaxed),
+            "verify_ok": c.verify_ok.load(Ordering::Relaxed),
+            "verify_failed": c.verify_bad.load(Ordering::Relaxed),
+            "rate_limited": {
+                "challenge": c.rate_limited_challenge.load(Ordering::Relaxed),
+                "attest": c.rate_limited_attest.load(Ordering::Relaxed),
+            },
+        },
+        "rates": {
+            // 分母 = 通过 + 失败；只作参考（挑战过期也会计入失败）
+            "attest_success_rate": (rate).round() / 10.0,
+        },
+    })
+}
 
 /// 判定原因归类（顺序必须与 `Counters::attest_rejected` 的下标一致）
 fn reject_idx(status: &str, body: &Value) -> usize {
@@ -286,6 +338,7 @@ fn route(method: &str, path: &str, body: &str, peer: &SocketAddr, store: &Shared
     match (method, path_only) {
         ("GET", "/healthz") => ("200 OK", json!({"ok": true})),
         ("GET", "/metrics") => ("200 OK", Value::String(render_metrics(counters, store))),
+        ("GET", "/v1/stats") => ("200 OK", render_stats(counters, store)),
         ("POST", "/v1/challenge") => {
             counters.challenges.fetch_add(1, Ordering::Relaxed);
             ("200 OK", issue_challenge(store))
@@ -433,7 +486,7 @@ fn main() {
         "dev-secret".into()
     });
     let store: SharedStore = Arc::new(Store::from_env());
-    let counters: SharedCounters = Arc::new(Counters::default());
+    let counters: SharedCounters = Arc::new(Counters::new());
     let listener = match TcpListener::bind(&listen) {
         Ok(l) => l,
         Err(e) => {
@@ -497,7 +550,7 @@ mod tests {
 
     fn store() -> SharedStore { Arc::new(Store::memory()) }
 
-    fn counters() -> SharedCounters { Arc::new(Counters::default()) }
+    fn counters() -> SharedCounters { Arc::new(Counters::new()) }
 
     fn good_fp() -> Value {
         json!({"ua":"Mozilla/5.0 Chrome/131","canvas":"d".repeat(64),
@@ -602,6 +655,24 @@ mod tests {
         }
         assert_eq!(codes.iter().filter(|s| **s == "200 OK").count(), 30);
         assert_eq!(codes.last().copied(), Some("429 Too Many Requests"));
+    }
+
+    #[test]
+    fn stats_json_shape() {
+        let store = Arc::new(Store::memory());
+        let c: SharedCounters = Arc::new(Counters::new());
+        c.challenges.fetch_add(3, Ordering::Relaxed);
+        c.attest_ok.fetch_add(2, Ordering::Relaxed);
+        c.attest_bad.fetch_add(1, Ordering::Relaxed);
+        c.decision[1].fetch_add(2, Ordering::Relaxed);
+        let v = render_stats(&c, &store);
+        assert_eq!(v["store"], "memory");
+        assert_eq!(v["counters"]["challenges"], 3);
+        assert_eq!(v["counters"]["attest_ok"], 2);
+        assert_eq!(v["counters"]["decision"]["challenge"], 2);
+        // 2 / (2+1) = 66.7%
+        assert_eq!(v["rates"]["attest_success_rate"], 66.7);
+        assert!(v["uptime_seconds"].as_u64().is_some());
     }
 
     #[test]

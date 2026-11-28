@@ -48,6 +48,7 @@ docker compose up --build
 | POST | `/v1/score` | `{fp, telemetry, geo_country?}` → `{risk, action, reasons}` |
 | GET | `/v1/verify?token=…` | 本地验签 token → `{valid, claims}` |
 | GET | `/metrics` | Prometheus 文本：challenge/attest/score/verify 计数 + 存储后端 |
+| GET | `/v1/stats` | 同一份数据的 JSON 版（抓不了 Prometheus 的场景）：uptime、计数器、成功率 |
 | GET | `/healthz` | 健康检查 |
 
 token = `v1.<b64url(payload)>.<b64url(hmac_sha256(secret, payload))>`，
@@ -58,6 +59,9 @@ PoW 材料（客户端/服务端必须逐字节一致）：
 ```
 sha256( challenge | mix | canvas | round(raf_ms*10) | nonce )  前缀 difficulty 个 0
 ```
+
+> ⚠️ `/metrics` 与 `/v1/stats` 参考实现**不鉴权**；生产必须放到反代后面，
+> 或只绑回环，和内部端点同等对待。
 
 ## 端到端冒烟
 

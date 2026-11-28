@@ -108,6 +108,13 @@ with urllib.request.urlopen(BASE + "/metrics", timeout=10) as r:
     mt = r.read().decode()
 ok("hhub_risk_challenges_total" in mt and "backend=" in mt, "metrics 端点")
 ok("hhub_risk_attest_total{result=\"ok\"}" in mt, "metrics 含 attest 结果")
+# /v1/stats：同一份数据的 JSON 版本（抓不了 Prometheus 的场景）
+with urllib.request.urlopen(BASE + "/v1/stats", timeout=10) as r:
+    stj = json.loads(r.read())
+ok(stj["counters"]["challenges"] >= 2, "stats 含发题计数")
+ok(stj["counters"]["attest_ok"] >= 1, "stats 含 attest 成功计数")
+ok("attest_success_rate" in stj["rates"], "stats 含成功率")
+ok(stj["store"] in ("memory", "redis"), "stats 含存储后端")
 ok('hhub_risk_attest_rejected_total{reason=' in mt, "metrics 含拒因")
 ok('hhub_risk_decision_total{action=' in mt, "metrics 含决策分布")
 

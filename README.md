@@ -30,7 +30,7 @@ This project aims at a third option:
 | L3 Network & geo | IP → country/city; timezone/language consistency | ✅ production in HHub |
 | L4 Long-term profile | per-fingerprint history, rhythm, rotation, template reuse | ✅ production (rules themselves are **not** open source) |
 | L5 Account/session | new device, private window, master session | ✅ production (email step-up) |
-| Protocol | `/v1/challenge`, `/v1/attest`, `/v1/score`, `/v1/verify` | ✅ reference server + OpenAPI |
+| Protocol | `/v1/challenge`, `/v1/attest`, `/v1/score`, `/v1/verify`, `/v1/stats`, `/metrics` | ✅ reference server + OpenAPI |
 | Clients | zero-dependency `hhub-risk.js` + React/Vue/WebComponent shells | ✅ browser end-to-end smoke |
 | SDKs | Go, Python, Node, Java, PHP (local token verification) | ✅ same cross-language test vector |
 
